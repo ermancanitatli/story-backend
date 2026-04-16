@@ -231,6 +231,7 @@ export class StorySessionsService {
       currentStep: newStep,
       currentChapter: newChapter,
       chapterStepCount: isChapterTransition ? 0 : newChapterStep,
+      storyProgress: grokResponse.isEnding ? 100 : Math.min(Math.round((newStep / 50) * 100), 99),
       emotionalStates: updatedEmotions,
       lastPlayedAt: new Date(),
       lastProgressId: progress._id.toString(),

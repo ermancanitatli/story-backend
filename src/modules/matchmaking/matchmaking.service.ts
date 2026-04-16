@@ -125,20 +125,30 @@ export class MatchmakingService {
       ];
     }
 
-    const candidate = await this.queueModel.findOne(filter).sort({ createdAt: 1 });
+    // Atomic claim: candidate'i tek operasyonda 'matched' yap (race-safe)
+    const candidate = await this.queueModel.findOneAndUpdate(
+      { ...filter, status: 'waiting' },
+      { status: 'matched', matchedWith: entry.userId, matchedGender: entry.playerGender },
+      { new: true, sort: { createdAt: 1 } },
+    );
     if (!candidate) return null;
 
-    // Eşleştir
-    await this.queueModel.findByIdAndUpdate(entry._id, {
-      status: 'matched',
-      matchedWith: candidate.userId,
-      matchedGender: candidate.playerGender,
-    });
-    await this.queueModel.findByIdAndUpdate(candidate._id, {
-      status: 'matched',
-      matchedWith: entry.userId,
-      matchedGender: entry.playerGender,
-    });
+    // Kendi entry'mizi güncelle (compensating rollback ile)
+    try {
+      await this.queueModel.findByIdAndUpdate(entry._id, {
+        status: 'matched',
+        matchedWith: candidate.userId,
+        matchedGender: candidate.playerGender,
+      });
+    } catch (err) {
+      // Rollback: candidate'i geri bırak
+      await this.queueModel.findByIdAndUpdate(candidate._id, {
+        status: 'waiting',
+        matchedWith: null,
+        matchedGender: null,
+      });
+      throw err;
+    }
 
     this.logger.log(`Matched: ${entry.userId} <-> ${candidate.userId}`);
     return await this.queueModel.findById(entry._id);

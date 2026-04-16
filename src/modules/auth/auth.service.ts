@@ -59,18 +59,14 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    // Check if refresh token exists and is not revoked
-    const stored = await this.refreshTokenModel.findOne({
-      token: refreshToken,
-      revoked: false,
-    });
+    // Atomic: find + revoke in single operation (prevents race condition)
+    const stored = await this.refreshTokenModel.findOneAndUpdate(
+      { token: refreshToken, revoked: false },
+      { $set: { revoked: true } },
+    );
     if (!stored) {
       throw new UnauthorizedException('Refresh token revoked or not found');
     }
-
-    // Revoke old refresh token (rotation)
-    stored.revoked = true;
-    await stored.save();
 
     // Generate new token pair
     const tokens = await this.generateTokens(payload.sub, payload.deviceId);

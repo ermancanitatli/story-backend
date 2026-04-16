@@ -19,9 +19,15 @@ export class BillingController {
     @Body() body: any,
     @Headers('authorization') authHeader: string,
   ) {
-    // Auth validation
-    const expectedToken = this.configService.get<string>('REVENUECAT_WEBHOOK_AUTH', 'AF8C84E8E3F959AF951F674A63352');
-    const token = (authHeader || '').replace(/^Bearer\s+/i, '').replace(/\s+Bearar\s+.*$/i, '').trim();
+    // Auth validation — token MUST be in env, no hardcoded fallback
+    const expectedToken = this.configService.get<string>('REVENUECAT_WEBHOOK_AUTH');
+    if (!expectedToken) {
+      throw new UnauthorizedException('REVENUECAT_WEBHOOK_AUTH not configured');
+    }
+    const token = (authHeader || '')
+      .replace(/^(?:Bearer|Bearar)\s+/i, '') // Accept both Bearer and Bearar
+      .replace(/\s+Bearar\s+.*$/i, '')       // Handle double format
+      .trim();
     if (token !== expectedToken) {
       throw new UnauthorizedException('Invalid webhook auth');
     }

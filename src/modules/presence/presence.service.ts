@@ -1,13 +1,26 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 
 @Injectable()
-export class PresenceService {
+export class PresenceService implements OnApplicationShutdown {
   private readonly logger = new Logger(PresenceService.name);
   // In-memory online users map: userId -> Set<socketId>
   private onlineUsers = new Map<string, Set<string>>();
 
   constructor(private usersService: UsersService) {}
+
+  /**
+   * Graceful shutdown — tüm online kullanıcıları offline olarak işaretle.
+   * PM2 restart veya deploy sırasında ghost online'ları önler.
+   */
+  async onApplicationShutdown() {
+    const onlineIds = this.getOnlineUserIds();
+    if (onlineIds.length === 0) return;
+    this.logger.log(`Shutting down: marking ${onlineIds.length} users offline`);
+    await Promise.allSettled(
+      onlineIds.map((id) => this.usersService.updatePresence(id, false)),
+    );
+  }
 
   async userConnected(userId: string, socketId: string): Promise<void> {
     if (!this.onlineUsers.has(userId)) {
