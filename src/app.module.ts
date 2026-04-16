@@ -33,7 +33,7 @@ import { HealthModule } from './modules/health/health.module';
           password: config.get<string>('MONGO_PASS', 'change-me'),
           replicaSet: config.get<string>('MONGO_RS', 'rs0'),
           authSource: config.get<string>('MONGO_AUTH_SOURCE', 'admin'),
-          directConnection: false,
+          directConnection: config.get<string>('MONGO_DIRECT_CONNECTION', 'true') === 'true',
         });
         const dbName = resolveDbName(env, {
           prod: config.get<string>('MONGO_DB_PROD', 'story_prod'),
