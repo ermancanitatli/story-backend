@@ -24,7 +24,13 @@ export class PremiumInfo {
 @Schema({ _id: false })
 export class DeviceInformation {
   @Prop()
+  deviceId?: string;
+
+  @Prop()
   model?: string;
+
+  @Prop()
+  deviceModelName?: string;
 
   @Prop()
   systemName?: string;
@@ -43,6 +49,39 @@ export class DeviceInformation {
 
   @Prop()
   timezone?: string;
+
+  @Prop()
+  screenSize?: string;
+
+  @Prop()
+  isSimulator?: boolean;
+
+  @Prop()
+  lastUpdated?: Date;
+}
+
+@Schema({ _id: false })
+export class AppSettings {
+  @Prop()
+  theme?: string;
+
+  @Prop()
+  language?: string;
+
+  @Prop()
+  contentRating?: string;
+
+  @Prop({ default: true })
+  hapticFeedback?: boolean;
+
+  @Prop({ default: true })
+  animations?: boolean;
+
+  @Prop({ default: true })
+  highQualityImages?: boolean;
+
+  @Prop({ type: Object })
+  extra?: Record<string, any>; // iOS'tan gelen ek alanlar
 }
 
 @Schema({ _id: false })
@@ -108,6 +147,9 @@ export class User extends Document {
 
   @Prop({ type: NotificationSettings, default: () => ({}) })
   notificationSettings: NotificationSettings;
+
+  @Prop({ type: AppSettings })
+  appSettings?: AppSettings;
 
   @Prop({ default: 0 })
   credits: number;

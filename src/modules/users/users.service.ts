@@ -101,6 +101,47 @@ export class UsersService {
   }
 
   /**
+   * Update device info sub-document.
+   */
+  async updateDeviceInfo(id: string, deviceInfo: Record<string, any>): Promise<User> {
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            deviceInfo: { ...deviceInfo, lastUpdated: new Date() },
+            lastSeen: new Date(),
+          },
+        },
+        { new: true },
+      )
+      .exec();
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
+  /**
+   * Increment a specific user stat atomically.
+   */
+  async incrementStat(id: string, statName: string, value: number = 1): Promise<User> {
+    const allowedStats = [
+      'storiesPlayed',
+      'storiesCompleted',
+      'multiplayerGamesPlayed',
+      'totalPlayTimeMinutes',
+    ];
+    if (!allowedStats.includes(statName)) {
+      throw new NotFoundException(`Invalid stat name: ${statName}`);
+    }
+
+    const user = await this.userModel
+      .findByIdAndUpdate(id, { $inc: { [`userStats.${statName}`]: value } }, { new: true })
+      .exec();
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
+  /**
    * Atomically modify credits (positive = grant, negative = spend).
    */
   async modifyCredits(id: string, amount: number): Promise<number> {
@@ -113,5 +154,20 @@ export class UsersService {
       throw new NotFoundException('User not found or insufficient credits');
     }
     return user.credits;
+  }
+
+  /**
+   * Search users by handle prefix (for friend search).
+   */
+  async searchByHandle(query: string, limit: number = 10): Promise<any[]> {
+    const users = await this.userModel
+      .find({
+        userHandle: { $regex: `^${query}`, $options: 'i' },
+        isFake: { $ne: true },
+      })
+      .select('displayName photoURL photoThumbnailURL userHandle online lastSeen')
+      .limit(limit)
+      .exec();
+    return users;
   }
 }
