@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { buildMongoUri, resolveDbName } from './config/database.config';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 
 // Feature modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -59,6 +61,12 @@ import { HealthModule } from './modules/health/health.module';
     UsersModule,
     StoriesModule,
     HealthModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
   ],
 })
 export class AppModule {}
