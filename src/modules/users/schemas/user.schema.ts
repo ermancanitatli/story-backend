@@ -1,0 +1,149 @@
+import { Prop, Schema, SchemaFactory, raw } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
+
+// -- Sub-schemas (embedded) --
+
+@Schema({ _id: false })
+export class PremiumInfo {
+  @Prop({ default: false })
+  isPremium: boolean;
+
+  @Prop()
+  plan?: string;
+
+  @Prop()
+  expiresAt?: Date;
+
+  @Prop()
+  provider?: string; // 'revenuecat'
+
+  @Prop()
+  originalTransactionId?: string;
+}
+
+@Schema({ _id: false })
+export class DeviceInformation {
+  @Prop()
+  model?: string;
+
+  @Prop()
+  systemName?: string;
+
+  @Prop()
+  systemVersion?: string;
+
+  @Prop()
+  appVersion?: string;
+
+  @Prop()
+  buildNumber?: string;
+
+  @Prop()
+  locale?: string;
+
+  @Prop()
+  timezone?: string;
+}
+
+@Schema({ _id: false })
+export class NotificationSettings {
+  @Prop({ default: true })
+  friendRequests: boolean;
+
+  @Prop({ default: true })
+  multiplayerInvites: boolean;
+
+  @Prop({ default: true })
+  storyUpdates: boolean;
+}
+
+@Schema({ _id: false })
+export class UserStats {
+  @Prop({ default: 0 })
+  storiesPlayed: number;
+
+  @Prop({ default: 0 })
+  storiesCompleted: number;
+
+  @Prop({ default: 0 })
+  multiplayerGamesPlayed: number;
+
+  @Prop({ default: 0 })
+  totalPlayTimeMinutes: number;
+}
+
+// -- Main User Schema --
+
+@Schema({ timestamps: true, collection: 'users' })
+export class User extends Document {
+  @Prop({ required: true, unique: true, index: true })
+  deviceId: string;
+
+  @Prop()
+  email?: string;
+
+  @Prop()
+  displayName?: string;
+
+  @Prop()
+  photoURL?: string;
+
+  @Prop()
+  photoThumbnailURL?: string;
+
+  @Prop({ default: true })
+  isAnonymous: boolean;
+
+  @Prop()
+  phoneNumber?: string;
+
+  @Prop({ sparse: true, unique: true, index: true })
+  userHandle?: string;
+
+  @Prop({ type: PremiumInfo, default: () => ({}) })
+  premium: PremiumInfo;
+
+  @Prop({ type: DeviceInformation })
+  deviceInfo?: DeviceInformation;
+
+  @Prop({ type: NotificationSettings, default: () => ({}) })
+  notificationSettings: NotificationSettings;
+
+  @Prop({ default: 0 })
+  credits: number;
+
+  @Prop({ default: false })
+  isFake: boolean;
+
+  @Prop({ default: false })
+  online: boolean;
+
+  @Prop()
+  lastSeen?: Date;
+
+  @Prop()
+  presenceUpdatedAt?: Date;
+
+  @Prop()
+  referredBy?: string;
+
+  @Prop()
+  appsflyer_id?: string;
+
+  @Prop({ type: UserStats, default: () => ({}) })
+  userStats: UserStats;
+
+  @Prop()
+  legacyFirebaseId?: string; // Geçiş dönemi — eski Firebase UID
+
+  @Prop()
+  oneSignalPlayerId?: string;
+}
+
+export const UserSchema = SchemaFactory.createForClass(User);
+
+// Compound indexes
+UserSchema.index({ isFake: 1 });
+UserSchema.index({ 'premium.isPremium': 1 });
+UserSchema.index({ online: 1, lastSeen: -1 });
+UserSchema.index({ legacyFirebaseId: 1 }, { sparse: true });

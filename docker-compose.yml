@@ -1,0 +1,62 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: story-mongo
+    restart: unless-stopped
+    command:
+      - bash
+      - -lc
+      - |
+        if [ ! -s /data/configdb/keyfile ]; then
+          umask 077
+          head -c 756 /dev/urandom | base64 > /data/configdb/keyfile
+          chmod 400 /data/configdb/keyfile
+        fi
+        exec mongod --replSet rs0 --bind_ip_all --port 27017 --keyFile /data/configdb/keyfile
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-change-me}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-admin}
+      MONGO_RS_HOST: ${MONGO_RS_HOST:-mongo:27017}
+      MONGO_PUBLIC_PORT: ${MONGO_PUBLIC_PORT:-31889}
+    ports:
+      - "${MONGO_PUBLIC_PORT:-31889}:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+      - ./docker/mongo/init-replica.js:/docker-entrypoint-initdb.d/01-init-replica.js:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mongosh -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --quiet --eval "try { rs.status().ok } catch (e) { 0 }" | grep 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+  redis:
+    image: redis:7-alpine
+    container_name: story-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+  redis_data:
+    driver: local
