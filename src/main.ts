@@ -2,6 +2,9 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { IoAdapter } from '@nestjs/platform-socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
+import Redis from 'ioredis';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -14,6 +17,32 @@ async function bootstrap() {
   const port = configService.get<number>('PORT', 3000);
   const prefix = configService.get<string>('API_PREFIX', 'api');
   const corsOrigin = configService.get<string>('CORS_ORIGIN', '*');
+
+  // Socket.IO Redis Adapter (cluster-safe)
+  const redisHost = configService.get<string>('REDIS_HOST', 'localhost');
+  const redisPort = configService.get<number>('REDIS_PORT', 6379);
+  const redisPassword = configService.get<string>('REDIS_PASSWORD') || undefined;
+  try {
+    const pubClient = new Redis({ host: redisHost, port: redisPort, password: redisPassword });
+    const subClient = pubClient.duplicate();
+    const redisIoAdapter = new IoAdapter(app);
+    (redisIoAdapter as any).createIOServer = function (port: number, options?: any) {
+      const server = IoAdapter.prototype.createIOServer.call(this, port, {
+        ...options,
+        cors: {
+          origin: corsOrigin === '*' ? true : corsOrigin.split(',').map((o: string) => o.trim()),
+          credentials: true,
+        },
+        transports: ['websocket', 'polling'],
+      });
+      server.adapter(createAdapter(pubClient, subClient));
+      return server;
+    };
+    app.useWebSocketAdapter(redisIoAdapter);
+    console.log('🔌 Socket.IO Redis adapter configured');
+  } catch (err) {
+    console.warn('⚠️ Redis adapter failed, using default Socket.IO adapter:', (err as Error).message);
+  }
 
   // Global prefix
   app.setGlobalPrefix(prefix);

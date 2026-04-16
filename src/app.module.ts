@@ -14,6 +14,15 @@ import { StoriesModule } from './modules/stories/stories.module';
 import { StorySessionsModule } from './modules/story-sessions/story-sessions.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AppSettingsModule } from './modules/app-settings/app-settings.module';
+import { PresenceModule } from './modules/presence/presence.module';
+import { MatchmakingModule } from './modules/matchmaking/matchmaking.module';
+import { MultiplayerModule } from './modules/multiplayer/multiplayer.module';
+import { FriendshipsModule } from './modules/friendships/friendships.module';
+import { UserHandlesModule } from './modules/user-handles/user-handles.module';
+import { CreditsModule } from './modules/credits/credits.module';
+import { BillingModule } from './modules/billing/billing.module';
+import { ReferralsModule } from './modules/referrals/referrals.module';
+import { StorageModule } from './modules/storage/storage.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -66,6 +75,15 @@ import { HealthModule } from './modules/health/health.module';
     StorySessionsModule,
     AiModule,
     AppSettingsModule,
+    PresenceModule,
+    MatchmakingModule,
+    MultiplayerModule,
+    FriendshipsModule,
+    UserHandlesModule,
+    CreditsModule,
+    BillingModule,
+    ReferralsModule,
+    StorageModule,
     HealthModule,
   ],
   providers: [
