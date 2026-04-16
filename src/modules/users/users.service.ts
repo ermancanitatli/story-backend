@@ -170,4 +170,11 @@ export class UsersService {
       .exec();
     return users;
   }
+
+  /**
+   * Get fake users (for matchmaking/presence).
+   */
+  async searchFakeUsers(limit: number = 50): Promise<User[]> {
+    return this.userModel.find({ isFake: true }).limit(limit).exec();
+  }
 }

@@ -23,6 +23,7 @@ import { CreditsModule } from './modules/credits/credits.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { ReferralsModule } from './modules/referrals/referrals.module';
 import { StorageModule } from './modules/storage/storage.module';
+import { FakeUsersModule } from './modules/fake-users/fake-users.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -84,6 +85,7 @@ import { HealthModule } from './modules/health/health.module';
     BillingModule,
     ReferralsModule,
     StorageModule,
+    FakeUsersModule,
     HealthModule,
   ],
   providers: [
