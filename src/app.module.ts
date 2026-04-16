@@ -11,6 +11,9 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { StoriesModule } from './modules/stories/stories.module';
+import { StorySessionsModule } from './modules/story-sessions/story-sessions.module';
+import { AiModule } from './modules/ai/ai.module';
+import { AppSettingsModule } from './modules/app-settings/app-settings.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -60,6 +63,9 @@ import { HealthModule } from './modules/health/health.module';
     AuthModule,
     UsersModule,
     StoriesModule,
+    StorySessionsModule,
+    AiModule,
+    AppSettingsModule,
     HealthModule,
   ],
   providers: [
