@@ -8,6 +8,7 @@ import { MultiplayerProgress, MultiplayerProgressSchema } from './schemas/multip
 import { StoriesModule } from '../stories/stories.module';
 import { AiModule } from '../ai/ai.module';
 import { UsersModule } from '../users/users.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { UsersModule } from '../users/users.module';
     StoriesModule,
     AiModule,
     UsersModule,
+    AuthModule,
   ],
   controllers: [MultiplayerController],
   providers: [MultiplayerService, MultiplayerGateway],
