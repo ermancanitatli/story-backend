@@ -14,6 +14,7 @@ import { ConfigService } from '@nestjs/config';
 import { PresenceService } from '../presence/presence.service';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
 import { MultiplayerService } from '../multiplayer/multiplayer.service';
+import { FakeMatchOrchestrator } from '../fake-users/fake-match-orchestrator.service';
 
 @WebSocketGateway({ cors: true })
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -24,6 +25,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private presenceService: PresenceService,
     private matchmakingService: MatchmakingService,
     @Inject(forwardRef(() => MultiplayerService)) private multiplayerService: MultiplayerService,
+    @Inject(forwardRef(() => FakeMatchOrchestrator)) private fakeMatchOrchestrator: FakeMatchOrchestrator,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {}
@@ -117,6 +119,8 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
       });
     } else {
       client.emit('matchmaking:waiting', { position: 1 });
+      // Gerçek eşleşme bulunamazsa fake match planla
+      this.fakeMatchOrchestrator.scheduleIfNeeded(userId, entry._id.toString());
     }
   }
 
@@ -151,8 +155,17 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = this.getUserId(client);
     if (!userId) return;
 
-    await this.matchmakingService.declineMatch(userId);
+    const entry = await this.matchmakingService.declineMatch(userId);
     client.emit('matchmaking:declined', {});
+
+    // Partner'a red bildirimi gönder
+    if (entry?.matchedWith) {
+      const partnerId = entry.matchedWith.toString();
+      this.server.to(`matchmaking:${partnerId}`).emit('matchmaking:partner-declined', {});
+    }
+
+    // Fake timer'ı iptal et
+    this.fakeMatchOrchestrator.cancelTimer(userId);
   }
 
   @SubscribeMessage('matchmaking:cancel')
@@ -162,6 +175,9 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     await this.matchmakingService.cancelQueue(userId);
     client.emit('matchmaking:cancelled', {});
+
+    // Fake timer'ı iptal et
+    this.fakeMatchOrchestrator.cancelTimer(userId);
   }
 
   // ─── Multiplayer ────────────────────────────────────────────

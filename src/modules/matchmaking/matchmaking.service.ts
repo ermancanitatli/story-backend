@@ -93,12 +93,12 @@ export class MatchmakingService {
   /**
    * Eşleşme reddet.
    */
-  async declineMatch(userId: string): Promise<void> {
+  async declineMatch(userId: string): Promise<MatchmakingQueue | null> {
     const entry = await this.queueModel.findOne({
       userId: new Types.ObjectId(userId),
       status: 'matched',
     });
-    if (!entry) return;
+    if (!entry) return null;
 
     // Kendini iptal et
     entry.status = 'cancelled';
@@ -111,6 +111,8 @@ export class MatchmakingService {
         { status: 'waiting', matchedWith: null, accepted: false, partnerAccepted: false },
       );
     }
+
+    return entry;
   }
 
   /**
