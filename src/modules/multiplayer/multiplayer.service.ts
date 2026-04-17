@@ -6,6 +6,7 @@ import { MultiplayerProgress } from './schemas/multiplayer-progress.schema';
 import { StoriesService } from '../stories/stories.service';
 import { AiService } from '../ai/ai.service';
 import { buildSystemPrompt, buildUserMessage } from '../ai/prompts/system-prompt.builder';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class MultiplayerService {
@@ -16,6 +17,7 @@ export class MultiplayerService {
     @InjectModel(MultiplayerProgress.name) private progressModel: Model<MultiplayerProgress>,
     private storiesService: StoriesService,
     private aiService: AiService,
+    private usersService: UsersService,
   ) {}
 
   async createSession(hostId: string, guestId: string, storyId: string): Promise<MultiplayerSession> {
@@ -32,15 +34,109 @@ export class MultiplayerService {
     });
   }
 
+  /**
+   * Matchmaking sonrası session oluştur.
+   * Kullanıcı profillerinden isim/cinsiyet otomatik alınır,
+   * rastgele hikaye seçilir ve doğrudan 'playing' phase'inde başlatılır.
+   * İlk AI sahnesi arka planda üretilir.
+   */
   async createSessionFromMatchmaking(hostId: string, guestId: string): Promise<MultiplayerSession> {
-    return this.sessionModel.create({
+    // Kullanıcı profillerini çek
+    const [hostUser, guestUser] = await Promise.all([
+      this.usersService.findById(hostId),
+      this.usersService.findById(guestId),
+    ]);
+
+    const hostName = hostUser?.displayName || hostUser?.userHandle || 'Player 1';
+    const guestName = guestUser?.displayName || guestUser?.userHandle || 'Player 2';
+    const hostGender = hostUser?.appSettings?.extra?.multiplayerGender || 'male';
+    const guestGender = guestUser?.appSettings?.extra?.multiplayerGender || 'female';
+
+    // Rastgele hikaye seç
+    let storyId: Types.ObjectId | undefined;
+    let storyClone: Record<string, any> | undefined;
+    try {
+      const result = await this.storiesService.findAll({ page: 1, limit: 50 });
+      const stories = result.data;
+      if (stories.length > 0) {
+        const picked = stories[Math.floor(Math.random() * stories.length)];
+        storyId = picked._id as Types.ObjectId;
+        storyClone = {
+          title: picked.title,
+          genre: picked.genre,
+          summary: picked.summary,
+          characters: picked.characters,
+          chapters: picked.chapters,
+        };
+      }
+    } catch (err) {
+      this.logger.warn(`Could not fetch stories for matchmaking session: ${(err as Error).message}`);
+    }
+
+    const session = await this.sessionModel.create({
       hostId: new Types.ObjectId(hostId),
       guestId: new Types.ObjectId(guestId),
-      phase: 'character-selection',
+      storyId,
+      phase: 'playing',
       activePlayerId: new Types.ObjectId(hostId),
       nextPlayerId: new Types.ObjectId(guestId),
+      hostName,
+      guestName,
+      hostGender,
+      guestGender,
+      hostAccepted: true,
+      guestAccepted: true,
+      storyClone,
       emotionalStates: { intimacy: 0, anger: 0, worry: 0, trust: 0, excitement: 0, sadness: 0 },
     });
+
+    // İlk AI sahnesini arka planda üret (session'ı bloklamadan)
+    this.generateInitialScene(session).catch((err) =>
+      this.logger.error(`Initial scene generation failed for session ${session._id}: ${(err as Error).message}`),
+    );
+
+    return session;
+  }
+
+  /**
+   * İlk AI sahnesini üret ve progress olarak kaydet.
+   */
+  private async generateInitialScene(session: MultiplayerSession): Promise<void> {
+    const clone = session.storyClone || {};
+    const systemPrompt = buildSystemPrompt({
+      storyTitle: clone.title || 'Interactive Story',
+      storySummary: clone.summary || '',
+      characters: (clone.characters || []) as any[],
+      currentChapter: 1,
+      emotionalStates: session.emotionalStates as any,
+      censorship: true,
+      isMultiplayer: true,
+      hostName: session.hostName,
+      guestName: session.guestName,
+      activePlayerName: session.hostName,
+    });
+    const userMessage = buildUserMessage({ type: 'start', userChoice: '', recentHistory: [] });
+
+    const grokResponse = await this.aiService.callGrokAPI({ systemPrompt, userMessage });
+
+    const progress = await this.progressModel.create({
+      sessionId: session._id,
+      activePlayerId: session.activePlayerId,
+      turnOrder: 1,
+      currentScene: grokResponse.currentScene,
+      choices: grokResponse.choices,
+      currentChapter: 1,
+      effects: grokResponse.effects,
+      isEnding: false,
+    });
+
+    await this.sessionModel.findByIdAndUpdate(session._id, {
+      lastProgressId: progress._id.toString(),
+      turnOrder: 1,
+      currentStep: 1,
+    });
+
+    this.logger.log(`Initial scene generated for matchmaking session ${session._id}`);
   }
 
   async getSession(sessionId: string): Promise<MultiplayerSession> {
