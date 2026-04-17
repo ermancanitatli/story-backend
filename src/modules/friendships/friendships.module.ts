@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { FriendshipsController } from './friendships.controller';
 import { FriendshipsService } from './friendships.service';
@@ -6,6 +6,7 @@ import { Friendship, FriendshipSchema } from './schemas/friendship.schema';
 import { FriendRequest, FriendRequestSchema } from './schemas/friend-request.schema';
 import { FriendAlert, FriendAlertSchema } from './schemas/friend-alert.schema';
 import { UsersModule } from '../users/users.module';
+import { SocketModule } from '../socket/socket.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { UsersModule } from '../users/users.module';
       { name: FriendAlert.name, schema: FriendAlertSchema },
     ]),
     UsersModule,
+    forwardRef(() => SocketModule),
   ],
   controllers: [FriendshipsController],
   providers: [FriendshipsService],

@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Friendship } from './schemas/friendship.schema';
 import { FriendRequest } from './schemas/friend-request.schema';
 import { FriendAlert } from './schemas/friend-alert.schema';
+import { AppGateway } from '../socket/app.gateway';
 
 @Injectable()
 export class FriendshipsService {
@@ -11,6 +12,7 @@ export class FriendshipsService {
     @InjectModel(Friendship.name) private friendshipModel: Model<Friendship>,
     @InjectModel(FriendRequest.name) private requestModel: Model<FriendRequest>,
     @InjectModel(FriendAlert.name) private alertModel: Model<FriendAlert>,
+    @Inject(forwardRef(() => AppGateway)) private appGateway: AppGateway,
   ) {}
 
   async sendRequest(fromUserId: string, toUserId: string): Promise<FriendRequest> {
@@ -40,6 +42,9 @@ export class FriendshipsService {
       { upsert: true },
     );
 
+    // Realtime bildirim: alıcıya arkadaşlık isteği geldiğini haber ver
+    this.appGateway.server.to(`user:${toUserId}`).emit('friend:request-received', { fromUserId });
+
     return request;
   }
 
@@ -67,6 +72,11 @@ export class FriendshipsService {
       { upsert: true },
     );
 
+    // Realtime bildirim: isteği gönderen kişiye kabul edildi bildir
+    this.appGateway.server
+      .to(`user:${request.fromUserId.toString()}`)
+      .emit('friend:accepted', { friendshipId: friendship._id.toString() });
+
     return friendship;
   }
 
@@ -80,7 +90,7 @@ export class FriendshipsService {
   }
 
   async getFriends(userId: string): Promise<Friendship[]> {
-    return this.friendshipModel.find({ members: new Types.ObjectId(userId) }).populate('members', 'displayName photoURL userHandle online lastSeen');
+    return this.friendshipModel.find({ members: new Types.ObjectId(userId) }).populate('members', 'displayName photoURL photoThumbnailURL userHandle online lastSeen');
   }
 
   async getIncomingRequests(userId: string): Promise<FriendRequest[]> {

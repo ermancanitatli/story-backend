@@ -126,6 +126,29 @@ export class MultiplayerController {
     return progress;
   }
 
+  @Post(':id/cancel')
+  @ApiOperation({ summary: 'Cancel a multiplayer session' })
+  async cancelSession(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() body: { reason?: string },
+  ) {
+    const session = await this.multiplayerService.cancelSession(id, user.sub, body?.reason);
+    this.appGateway.emitSessionUpdate(id, session);
+    return session;
+  }
+
+  @Post(':id/decline')
+  @ApiOperation({ summary: 'Decline a multiplayer invite' })
+  async declineSession(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+  ) {
+    const session = await this.multiplayerService.cancelSession(id, user.sub, 'declined');
+    this.appGateway.emitSessionUpdate(id, session);
+    return session;
+  }
+
   @Get(':id/progress')
   @ApiOperation({ summary: 'Get latest multiplayer progress (localized)' })
   async getProgress(

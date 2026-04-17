@@ -340,6 +340,21 @@ export class MultiplayerService {
     return progress;
   }
 
+  async cancelSession(sessionId: string, userId: string, reason?: string): Promise<MultiplayerSession> {
+    const session = await this.getSession(sessionId);
+    const isHost = session.hostId.toString() === userId;
+    const isGuest = session.guestId.toString() === userId;
+    if (!isHost && !isGuest) throw new BadRequestException('Not a participant');
+    if (session.phase === 'ended' || session.phase === 'cancelled') throw new BadRequestException('Session already finished');
+
+    const updated = await this.sessionModel.findByIdAndUpdate(
+      sessionId,
+      { phase: 'cancelled', completedAt: new Date(), cancelledBy: userId, cancelReason: reason || 'user_cancelled' },
+      { new: true },
+    );
+    return updated!;
+  }
+
   async getLatestProgress(sessionId: string): Promise<MultiplayerProgress | null> {
     return this.progressModel.findOne({ sessionId: new Types.ObjectId(sessionId) }).sort({ turnOrder: -1 });
   }
