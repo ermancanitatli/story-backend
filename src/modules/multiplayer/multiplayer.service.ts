@@ -53,25 +53,20 @@ export class MultiplayerService {
     const guestGender = guestUser?.appSettings?.extra?.multiplayerGender || 'female';
 
     // Rastgele hikaye seç
-    let storyId: Types.ObjectId | undefined;
-    let storyClone: Record<string, any> | undefined;
-    try {
-      const result = await this.storiesService.findAll({ page: 1, limit: 50 });
-      const stories = result.data;
-      if (stories.length > 0) {
-        const picked = stories[Math.floor(Math.random() * stories.length)];
-        storyId = picked._id as Types.ObjectId;
-        storyClone = {
-          title: picked.title,
-          genre: picked.genre,
-          summary: picked.summary,
-          characters: picked.characters,
-          chapters: picked.chapters,
-        };
-      }
-    } catch (err) {
-      this.logger.warn(`Could not fetch stories for matchmaking session: ${(err as Error).message}`);
+    const result = await this.storiesService.findAll({ page: 1, limit: 50 });
+    const stories = result.data;
+    if (!stories || stories.length === 0) {
+      throw new BadRequestException('No stories available for matchmaking');
     }
+    const picked = stories[Math.floor(Math.random() * stories.length)];
+    const storyId = picked._id as Types.ObjectId;
+    const storyClone = {
+      title: picked.title,
+      genre: picked.genre,
+      summary: picked.summary,
+      characters: picked.characters,
+      chapters: picked.chapters,
+    };
 
     const session = await this.sessionModel.create({
       hostId: new Types.ObjectId(hostId),

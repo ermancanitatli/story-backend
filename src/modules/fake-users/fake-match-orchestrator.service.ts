@@ -43,8 +43,8 @@ export class FakeMatchOrchestrator implements OnModuleDestroy {
     const settings = await this.settingsService.getSettings();
     if (!settings.fakeMatch) return;
 
-    // Zaten timer varsa return
-    if (this.timers.has(userId)) return;
+    // Zaten timer varsa return (ana timer, delay timer veya accept timer)
+    if (this.timers.has(userId) || this.timers.has(`${userId}:delay`) || this.timers.has(`${userId}:accept`)) return;
 
     // 10 saniye gerçek kullanıcı arama penceresi
     const REAL_SEARCH_WINDOW_MS = 10_000;
@@ -224,6 +224,11 @@ export class FakeMatchOrchestrator implements OnModuleDestroy {
           this.appGateway.server
             .to(`matchmaking:${realUserId}`)
             .emit('matchmaking:partner-declined', {});
+
+          // Gerçek kullanıcıya tekrar kuyruğa alındığını bildir
+          this.appGateway.server
+            .to(`matchmaking:${realUserId}`)
+            .emit('matchmaking:waiting', { position: 1 });
 
           this.logger.log(`Fake declined: ${realUserId} <-> ${fakeUserId}`);
 

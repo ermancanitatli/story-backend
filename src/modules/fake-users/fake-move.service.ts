@@ -1,10 +1,10 @@
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef, OnModuleDestroy } from '@nestjs/common';
 import { MultiplayerService } from '../multiplayer/multiplayer.service';
 import { AppGateway } from '../socket/app.gateway';
 import { UsersService } from '../users/users.service';
 
 @Injectable()
-export class FakeMoveService {
+export class FakeMoveService implements OnModuleDestroy {
   private readonly logger = new Logger(FakeMoveService.name);
   private timers = new Map<string, NodeJS.Timeout>();
 
@@ -18,7 +18,13 @@ export class FakeMoveService {
    * Fake user'ın sırası geldiğinde otomatik hamle planla.
    * 3-8 saniye random delay ile mevcut seçeneklerden rastgele birini seçer.
    */
-  scheduleFakeMove(sessionId: string, fakeUserId: string): void {
+  scheduleFakeMove(sessionId: string, fakeUserId: string, chainDepth: number = 0): void {
+    const MAX_CHAIN = 50;
+    if (chainDepth >= MAX_CHAIN) {
+      this.logger.warn(`Max fake move chain reached for session ${sessionId}`);
+      return;
+    }
+
     const delay = 3_000 + Math.floor(Math.random() * 5_000); // 3-8 sn
     const timerKey = `${sessionId}:${fakeUserId}`;
 
@@ -27,7 +33,7 @@ export class FakeMoveService {
 
     const timer = setTimeout(async () => {
       this.timers.delete(timerKey);
-      await this.executeMove(sessionId, fakeUserId);
+      await this.executeMove(sessionId, fakeUserId, chainDepth);
     }, delay);
 
     this.timers.set(timerKey, timer);
@@ -37,9 +43,19 @@ export class FakeMoveService {
   /**
    * Fake user için otomatik hamle yap.
    */
-  private async executeMove(sessionId: string, fakeUserId: string): Promise<void> {
+  private async executeMove(sessionId: string, fakeUserId: string, chainDepth: number = 0): Promise<void> {
     try {
       const session = await this.multiplayerService.getSession(sessionId);
+
+      // Her iki oyuncu da fake ise döngüye girmeyi engelle
+      const [hostUser, guestUser] = await Promise.all([
+        this.usersService.findById(session.hostId.toString()),
+        this.usersService.findById(session.guestId.toString()),
+      ]);
+      if (hostUser?.isFake && guestUser?.isFake) {
+        this.logger.error(`Both players are fake in session ${sessionId}, aborting fake moves`);
+        return;
+      }
 
       // Hâlâ fake user'ın sırası mı kontrol et
       if (session.phase !== 'playing') return;
@@ -53,15 +69,25 @@ export class FakeMoveService {
       }
 
       // Rastgele bir seçenek seç
-      const choices = latestProgress.choices as any[];
+      const choices = (latestProgress.choices || []) as any[];
+      if (choices.length === 0) {
+        this.logger.warn(`No choices available for fake move in session ${sessionId}`);
+        return;
+      }
       const randomChoice = choices[Math.floor(Math.random() * choices.length)];
+      const choiceId = randomChoice.id || randomChoice._id?.toString();
+      const choiceText = randomChoice.text;
+      if (!choiceId || !choiceText) {
+        this.logger.warn(`Invalid choice structure in session ${sessionId}`);
+        return;
+      }
 
-      this.logger.log(`Fake move: session=${sessionId}, choice="${randomChoice.text}"`);
+      this.logger.log(`Fake move: session=${sessionId}, choice="${choiceText}"`);
 
       // Hamle yap
       const progress = await this.multiplayerService.submitChoice(sessionId, fakeUserId, {
-        id: randomChoice.id || randomChoice._id || String(Math.random()),
-        text: randomChoice.text,
+        id: choiceId,
+        text: choiceText,
         type: randomChoice.type || 'action',
       });
 
@@ -77,12 +103,19 @@ export class FakeMoveService {
       if (updatedSession.phase === 'playing' && updatedSession.activePlayerId) {
         const nextUser = await this.usersService.findById(updatedSession.activePlayerId.toString());
         if (nextUser?.isFake) {
-          this.scheduleFakeMove(sessionId, updatedSession.activePlayerId.toString());
+          this.scheduleFakeMove(sessionId, updatedSession.activePlayerId.toString(), chainDepth + 1);
         }
       }
     } catch (err) {
       this.logger.error(`Fake move failed for session ${sessionId}: ${(err as Error).message}`);
     }
+  }
+
+  onModuleDestroy() {
+    for (const timer of this.timers.values()) {
+      clearTimeout(timer);
+    }
+    this.timers.clear();
   }
 
   cancelTimer(sessionId: string, userId: string): void {

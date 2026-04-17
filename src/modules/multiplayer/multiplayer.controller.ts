@@ -92,13 +92,10 @@ export class MultiplayerController {
     }
 
     // Sonraki oyuncu fake user ise otomatik hamle planla
-    if (!progress.isEnding) {
-      const session = await this.multiplayerService.getSession(id);
-      if (session.activePlayerId) {
-        const nextUser = await this.usersService.findById(session.activePlayerId.toString());
-        if (nextUser?.isFake) {
-          this.fakeMoveService.scheduleFakeMove(id, session.activePlayerId.toString());
-        }
+    if (!progress.isEnding && progress.activePlayerId) {
+      const nextUser = await this.usersService.findById(progress.activePlayerId.toString());
+      if (nextUser?.isFake) {
+        this.fakeMoveService.scheduleFakeMove(id, progress.activePlayerId.toString());
       }
     }
 

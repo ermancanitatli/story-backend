@@ -82,6 +82,8 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Only broadcast offline if truly offline (no more sockets)
     if (!this.presenceService.isOnline(userId)) {
       this.server.emit('user:offline', { userId, lastSeen: new Date().toISOString() });
+      // Offline kullanıcının fake match timer'larını iptal et
+      this.fakeMatchOrchestrator.cancelTimer(userId);
     }
 
     this.logger.log(`Client disconnected: ${client.id} (user: ${userId})`);
