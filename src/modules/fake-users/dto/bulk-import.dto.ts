@@ -40,6 +40,30 @@ class ImportUserDto {
 
   @IsOptional()
   appSettings?: Record<string, any>;
+
+  @IsOptional()
+  isAnonymous?: boolean;
+
+  @IsOptional()
+  isFake?: boolean;
+
+  @IsOptional()
+  online?: boolean;
+
+  @IsOptional()
+  lastSeen?: any;
+
+  @IsOptional()
+  presenceUpdatedAt?: any;
+
+  @IsOptional()
+  premium?: Record<string, any>;
+
+  @IsOptional()
+  notificationSettings?: Record<string, any>;
+
+  @IsOptional()
+  userStats?: Record<string, any>;
 }
 
 export class BulkImportDto {
