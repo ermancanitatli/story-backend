@@ -248,25 +248,55 @@ export class MultiplayerService {
    * Grok bazen farklı formatlar dönebiliyor (string, obje, eksik alanlar).
    */
   private normalizeChoices(choices: any): { id: string; text: string; type: string }[] {
-    if (!Array.isArray(choices)) {
-      this.logger.warn(`Choices is not an array, creating defaults`);
-      return [
-        { id: '1', text: 'Continue the conversation', type: 'dialogue' },
-        { id: '2', text: 'Explore the surroundings', type: 'exploration' },
-        { id: '3', text: 'Take a bold action', type: 'action' },
-        { id: '4', text: 'Make a careful decision', type: 'decision' },
-      ];
+    const defaults = [
+      { id: '1', text: 'Continue the conversation', type: 'dialogue' },
+      { id: '2', text: 'Explore the surroundings', type: 'exploration' },
+      { id: '3', text: 'Take a bold action', type: 'action' },
+      { id: '4', text: 'Make a careful decision', type: 'decision' },
+    ];
+
+    // String ise JSON parse dene (Grok bazen choices'ı string olarak dönüyor)
+    if (typeof choices === 'string') {
+      try {
+        choices = JSON.parse(choices);
+      } catch {
+        this.logger.warn('Choices is a non-JSON string, using defaults');
+        return defaults;
+      }
+    }
+
+    if (!Array.isArray(choices) || choices.length === 0) {
+      this.logger.warn('Choices is not a valid array, using defaults');
+      return defaults;
+    }
+
+    // Eğer array'in ilk elemanı bir string ve "[" ile başlıyorsa, iç içe string array
+    if (choices.length === 1 && typeof choices[0] === 'string') {
+      try {
+        // JS object literal'ı JSON'a çevir (key'leri tırnakla)
+        const fixed = choices[0].replace(/'/g, '"').replace(/(\w+):/g, '"$1":');
+        const parsed = JSON.parse(fixed);
+        if (Array.isArray(parsed)) {
+          choices = parsed;
+        }
+      } catch {
+        // Parse başarısız — tek string'i choice olarak kullan
+        this.logger.warn('Could not parse nested choices string');
+      }
     }
 
     return choices.map((c: any, i: number) => {
       if (typeof c === 'string') {
         return { id: String(i + 1), text: c, type: 'action' };
       }
-      return {
-        id: String(c.id ?? c._id ?? i + 1),
-        text: String(c.text ?? c.label ?? c.description ?? `Choice ${i + 1}`),
-        type: String(c.type ?? 'action'),
-      };
+      if (typeof c === 'object' && c !== null) {
+        return {
+          id: String(c.id ?? c._id ?? i + 1),
+          text: String(c.text ?? c.label ?? c.description ?? `Choice ${i + 1}`),
+          type: String(c.type ?? 'action'),
+        };
+      }
+      return { id: String(i + 1), text: `Choice ${i + 1}`, type: 'action' };
     });
   }
 }
