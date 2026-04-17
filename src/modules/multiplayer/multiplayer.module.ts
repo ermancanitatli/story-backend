@@ -1,14 +1,13 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MultiplayerController } from './multiplayer.controller';
 import { MultiplayerService } from './multiplayer.service';
-import { MultiplayerGateway } from './multiplayer.gateway';
 import { MultiplayerSession, MultiplayerSessionSchema } from './schemas/multiplayer-session.schema';
 import { MultiplayerProgress, MultiplayerProgressSchema } from './schemas/multiplayer-progress.schema';
 import { StoriesModule } from '../stories/stories.module';
 import { AiModule } from '../ai/ai.module';
 import { UsersModule } from '../users/users.module';
-import { AuthModule } from '../auth/auth.module';
+import { SocketModule } from '../socket/socket.module';
 
 @Module({
   imports: [
@@ -19,10 +18,10 @@ import { AuthModule } from '../auth/auth.module';
     StoriesModule,
     AiModule,
     UsersModule,
-    AuthModule,
+    forwardRef(() => SocketModule),
   ],
   controllers: [MultiplayerController],
-  providers: [MultiplayerService, MultiplayerGateway],
+  providers: [MultiplayerService],
   exports: [MultiplayerService],
 })
 export class MultiplayerModule {}

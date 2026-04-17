@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Cron } from '@nestjs/schedule';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
-import { MatchmakingGateway } from '../matchmaking/matchmaking.gateway';
+import { AppGateway } from '../socket/app.gateway';
 import { MatchmakingQueue } from '../matchmaking/schemas/matchmaking-queue.schema';
 import { AppSettingsService } from '../app-settings/app-settings.service';
 import { UsersService } from '../users/users.service';
@@ -16,7 +16,7 @@ export class FakeMatchScheduler {
   constructor(
     @InjectModel(MatchmakingQueue.name) private queueModel: Model<MatchmakingQueue>,
     private matchmakingService: MatchmakingService,
-    private matchmakingGateway: MatchmakingGateway,
+    private appGateway: AppGateway,
     private settingsService: AppSettingsService,
     private usersService: UsersService,
     private fakeUsersService: FakeUsersService,
@@ -87,7 +87,7 @@ export class FakeMatchScheduler {
           });
 
           // Gerçek kullanıcıya socket ile bildirim gönder
-          this.matchmakingGateway.server
+          this.appGateway.server
             .to(`matchmaking:${realUserId}`)
             .emit('matchmaking:matched', {
               partnerId: fakeUserId,

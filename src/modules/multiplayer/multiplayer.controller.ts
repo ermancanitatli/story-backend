@@ -1,7 +1,7 @@
-import { Controller, Post, Get, Patch, Param, Body } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Param, Body, Inject, forwardRef } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { MultiplayerService } from './multiplayer.service';
-import { MultiplayerGateway } from './multiplayer.gateway';
+import { AppGateway } from '../socket/app.gateway';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
@@ -12,7 +12,7 @@ import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
 export class MultiplayerController {
   constructor(
     private multiplayerService: MultiplayerService,
-    private multiplayerGateway: MultiplayerGateway,
+    @Inject(forwardRef(() => AppGateway)) private appGateway: AppGateway,
   ) {}
 
   @Post('invite')
@@ -22,7 +22,7 @@ export class MultiplayerController {
     @Body() body: { guestId: string; storyId: string },
   ) {
     const session = await this.multiplayerService.createSession(user.sub, body.guestId, body.storyId);
-    this.multiplayerGateway.emitSessionUpdate(session._id.toString(), session);
+    this.appGateway.emitSessionUpdate(session._id.toString(), session);
     return session;
   }
 
@@ -40,7 +40,7 @@ export class MultiplayerController {
     @Body() body: { name: string },
   ) {
     const session = await this.multiplayerService.updateSessionField(id, user.sub, 'name', body.name);
-    this.multiplayerGateway.emitSessionUpdate(id, session);
+    this.appGateway.emitSessionUpdate(id, session);
     return session;
   }
 
@@ -52,7 +52,7 @@ export class MultiplayerController {
     @Body() body: { gender: string },
   ) {
     const session = await this.multiplayerService.updateSessionField(id, user.sub, 'gender', body.gender);
-    this.multiplayerGateway.emitSessionUpdate(id, session);
+    this.appGateway.emitSessionUpdate(id, session);
     return session;
   }
 
@@ -63,7 +63,7 @@ export class MultiplayerController {
     @Param('id', ParseObjectIdPipe) id: string,
   ) {
     const session = await this.multiplayerService.updateSessionField(id, user.sub, 'accepted', true);
-    this.multiplayerGateway.emitSessionUpdate(id, session);
+    this.appGateway.emitSessionUpdate(id, session);
     return session;
   }
 
@@ -81,10 +81,10 @@ export class MultiplayerController {
     });
 
     // Emit real-time events
-    this.multiplayerGateway.emitProgressNew(id, progress);
+    this.appGateway.emitProgressNew(id, progress);
 
     if (progress.isEnding) {
-      this.multiplayerGateway.emitSessionCompleted(id, { endingType: progress.endingType });
+      this.appGateway.emitSessionCompleted(id, { endingType: progress.endingType });
     }
 
     return progress;

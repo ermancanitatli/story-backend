@@ -8,6 +8,7 @@ import { UsersModule } from '../users/users.module';
 import { AppSettingsModule } from '../app-settings/app-settings.module';
 import { MultiplayerModule } from '../multiplayer/multiplayer.module';
 import { UserHandlesModule } from '../user-handles/user-handles.module';
+import { SocketModule } from '../socket/socket.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import {
   MatchmakingQueue,
@@ -25,6 +26,7 @@ import {
     AppSettingsModule,
     MultiplayerModule,
     UserHandlesModule,
+    SocketModule,
   ],
   controllers: [FakeUsersController],
   providers: [FakeUsersService, FakeMatchScheduler],
