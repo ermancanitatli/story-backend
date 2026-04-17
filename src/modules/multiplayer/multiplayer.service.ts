@@ -139,9 +139,14 @@ export class MultiplayerService {
     if (grokResponse.scenes) {
       // Çift dilli response
       scenes = grokResponse.scenes;
-      localizedChoices = grokResponse.localizedChoices;
+      // Her dilin choices'ını normalize et
+      const rawLC = grokResponse.localizedChoices || {};
+      localizedChoices = {};
+      for (const lang of Object.keys(rawLC)) {
+        localizedChoices[lang] = this.normalizeChoices(rawLC[lang]);
+      }
       sceneText = grokResponse.scenes[languages[0]] || Object.values(grokResponse.scenes)[0] || '';
-      choicesData = grokResponse.localizedChoices?.[languages[0]] || Object.values(grokResponse.localizedChoices || {})[0] || [];
+      choicesData = localizedChoices[languages[0]] || Object.values(localizedChoices)[0] || [];
     } else {
       // Tek dilli response
       sceneText = grokResponse.currentScene || '';
@@ -254,9 +259,14 @@ export class MultiplayerService {
 
     if (grokResponse.scenes) {
       scenes = grokResponse.scenes;
-      localizedChoices = grokResponse.localizedChoices;
+      // Her dilin choices'ını normalize et
+      const rawLC = grokResponse.localizedChoices || {};
+      localizedChoices = {};
+      for (const lang of Object.keys(rawLC)) {
+        localizedChoices[lang] = this.normalizeChoices(rawLC[lang]);
+      }
       sceneText = grokResponse.scenes[languages[0]] || Object.values(grokResponse.scenes)[0] || '';
-      choicesArr = grokResponse.localizedChoices?.[languages[0]] || Object.values(grokResponse.localizedChoices || {})[0] || [];
+      choicesArr = localizedChoices[languages[0]] || Object.values(localizedChoices)[0] || [];
     } else {
       sceneText = grokResponse.currentScene || '';
       choicesArr = grokResponse.choices || [];

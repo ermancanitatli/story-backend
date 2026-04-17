@@ -79,11 +79,18 @@ export class AiService {
 
         const parsed = JSON.parse(content) as GrokResponse;
 
+        // Bilingual key mapping: Grok returns "choices" as object but we expect "localizedChoices"
+        if (parsed.scenes && parsed.choices && !Array.isArray(parsed.choices)) {
+          parsed.localizedChoices = parsed.choices as any;
+          parsed.choices = undefined;
+        }
+
         // Validate required fields
         const hasSingleLang = parsed.currentScene && Array.isArray(parsed.choices);
-        const hasBilingual = parsed.scenes && typeof parsed.scenes === 'object';
+        const hasBilingual = parsed.scenes && typeof parsed.scenes === 'object'
+          && (parsed.localizedChoices && typeof parsed.localizedChoices === 'object');
         if (!hasSingleLang && !hasBilingual) {
-          throw new Error('Invalid Grok response format: missing currentScene/choices or scenes');
+          throw new Error('Invalid Grok response format: missing currentScene/choices or scenes/localizedChoices');
         }
 
         this.logger.log(`Grok API success (attempt ${attempt + 1}, tokens: ${maxTokens})`);

@@ -111,8 +111,34 @@ export class MultiplayerController {
   }
 
   @Get(':id/progress')
-  @ApiOperation({ summary: 'Get latest multiplayer progress' })
-  async getProgress(@Param('id', ParseObjectIdPipe) id: string) {
-    return this.multiplayerService.getLatestProgress(id);
+  @ApiOperation({ summary: 'Get latest multiplayer progress (localized)' })
+  async getProgress(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+  ) {
+    const progress = await this.multiplayerService.getLatestProgress(id);
+    if (!progress) return null;
+
+    // Çift dilli progress ise kullanıcının diline göre lokalize et
+    if (progress.scenes) {
+      const session = await this.multiplayerService.getSession(id);
+      const isHost = session.hostId.toString() === user.sub;
+      const lang = isHost
+        ? (session.hostLanguageCode || 'en')
+        : (session.guestLanguageCode || 'en');
+
+      const plain = typeof (progress as any).toObject === 'function'
+        ? (progress as any).toObject()
+        : { ...progress };
+      plain.currentScene = progress.scenes[lang] || Object.values(progress.scenes)[0] || progress.currentScene;
+      plain.choices = (progress as any).localizedChoices?.[lang]
+        || Object.values((progress as any).localizedChoices || {})[0]
+        || progress.choices;
+      delete plain.scenes;
+      delete plain.localizedChoices;
+      return plain;
+    }
+
+    return progress;
   }
 }
