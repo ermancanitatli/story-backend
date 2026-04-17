@@ -15,10 +15,10 @@ export class MultiplayerProgress extends Document {
   @Prop({ required: true })
   currentScene: string;
 
-  @Prop({ type: [{ id: String, text: String, type: String }], default: [] })
+  @Prop({ type: [{ id: { type: String }, text: { type: String }, type: { type: String } }], default: [] })
   choices: { id: string; text: string; type: string }[];
 
-  @Prop({ type: { id: String, text: String, type: String } })
+  @Prop({ type: { id: { type: String }, text: { type: String }, type: { type: String } } })
   userChoice?: { id: string; text: string; type: string };
 
   @Prop() characterRole?: string;
