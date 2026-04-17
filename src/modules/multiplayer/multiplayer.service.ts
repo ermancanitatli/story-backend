@@ -175,6 +175,18 @@ export class MultiplayerService {
     this.logger.log(`Initial scene generated for matchmaking session ${session._id}`);
   }
 
+  /**
+   * Kullanıcının tüm multiplayer session'larını listele (host veya guest olarak).
+   */
+  async getUserSessions(userId: string): Promise<MultiplayerSession[]> {
+    const oid = new Types.ObjectId(userId);
+    return this.sessionModel
+      .find({ $or: [{ hostId: oid }, { guestId: oid }] })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .exec();
+  }
+
   async getSession(sessionId: string): Promise<MultiplayerSession> {
     const session = await this.sessionModel.findById(sessionId);
     if (!session) throw new NotFoundException('Session not found');

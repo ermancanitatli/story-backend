@@ -30,6 +30,12 @@ export class MultiplayerController {
     return session;
   }
 
+  @Get()
+  @ApiOperation({ summary: 'List user multiplayer sessions' })
+  async listSessions(@CurrentUser() user: JwtPayload) {
+    return this.multiplayerService.getUserSessions(user.sub);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get multiplayer session' })
   async getSession(@Param('id', ParseObjectIdPipe) id: string) {
