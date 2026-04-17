@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { FakeUsersController } from './fake-users.controller';
 import { FakeUsersService } from './fake-users.service';
@@ -27,7 +27,7 @@ import {
     AppSettingsModule,
     MultiplayerModule,
     UserHandlesModule,
-    SocketModule,
+    forwardRef(() => SocketModule),
   ],
   controllers: [FakeUsersController],
   providers: [FakeUsersService, FakeMatchScheduler, FakeMatchOrchestrator],
