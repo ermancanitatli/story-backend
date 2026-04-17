@@ -25,7 +25,7 @@ import {
     MatchmakingModule,
     UsersModule,
     AppSettingsModule,
-    MultiplayerModule,
+    forwardRef(() => MultiplayerModule),
     UserHandlesModule,
     forwardRef(() => SocketModule),
   ],
