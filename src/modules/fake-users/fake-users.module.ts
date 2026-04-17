@@ -9,10 +9,17 @@ import { AppSettingsModule } from '../app-settings/app-settings.module';
 import { MultiplayerModule } from '../multiplayer/multiplayer.module';
 import { UserHandlesModule } from '../user-handles/user-handles.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
+import {
+  MatchmakingQueue,
+  MatchmakingQueueSchema,
+} from '../matchmaking/schemas/matchmaking-queue.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+    MongooseModule.forFeature([
+      { name: User.name, schema: UserSchema },
+      { name: MatchmakingQueue.name, schema: MatchmakingQueueSchema },
+    ]),
     MatchmakingModule,
     UsersModule,
     AppSettingsModule,

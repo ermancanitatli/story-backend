@@ -15,6 +15,6 @@ import { AuthModule } from '../auth/auth.module';
     AuthModule,
   ],
   providers: [MatchmakingGateway, MatchmakingService],
-  exports: [MatchmakingService],
+  exports: [MatchmakingService, MatchmakingGateway],
 })
 export class MatchmakingModule {}

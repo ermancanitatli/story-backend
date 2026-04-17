@@ -32,6 +32,9 @@ export class MatchmakingQueue extends Document {
 
   @Prop()
   sessionId?: string;
+
+  @Prop({ default: false })
+  isFake?: boolean;
 }
 
 export const MatchmakingQueueSchema = SchemaFactory.createForClass(MatchmakingQueue);

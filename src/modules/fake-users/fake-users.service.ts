@@ -36,13 +36,13 @@ export class FakeUsersService {
 
       // Gender preference kontrolü
       if (params.preference && params.preference !== 'any') {
-        // Basit filtre — fake user'ın gender'ı yoksa skip
-        // İleride user_settings'ten gender alınabilir
+        const fakeGender = fake.appSettings?.extra?.multiplayerGender;
+        if (!fakeGender || fakeGender !== params.preference) continue;
       }
 
       return {
         userId: fake._id.toString(),
-        gender: undefined, // user_settings'ten alınacak
+        gender: fake.appSettings?.extra?.multiplayerGender || undefined,
       };
     }
 
