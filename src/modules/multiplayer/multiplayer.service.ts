@@ -116,12 +116,15 @@ export class MultiplayerService {
 
     const grokResponse = await this.aiService.callGrokAPI({ systemPrompt, userMessage });
 
+    // Choices'ı normalize et — Grok bazen farklı format dönebiliyor
+    const normalizedChoices = this.normalizeChoices(grokResponse.choices);
+
     const progress = await this.progressModel.create({
       sessionId: session._id,
       activePlayerId: session.activePlayerId,
       turnOrder: 1,
       currentScene: grokResponse.currentScene,
-      choices: grokResponse.choices,
+      choices: normalizedChoices,
       currentChapter: 1,
       effects: grokResponse.effects,
       isEnding: false,
@@ -212,7 +215,7 @@ export class MultiplayerService {
       activePlayerId: session.nextPlayerId,
       turnOrder: newTurn,
       currentScene: grokResponse.currentScene,
-      choices: grokResponse.choices,
+      choices: this.normalizeChoices(grokResponse.choices),
       currentChapter: session.currentChapter,
       effects: grokResponse.effects,
       isEnding: grokResponse.isEnding || false,
@@ -238,5 +241,32 @@ export class MultiplayerService {
 
   async getLatestProgress(sessionId: string): Promise<MultiplayerProgress | null> {
     return this.progressModel.findOne({ sessionId: new Types.ObjectId(sessionId) }).sort({ turnOrder: -1 });
+  }
+
+  /**
+   * Grok API'den dönen choices'ı normalize et.
+   * Grok bazen farklı formatlar dönebiliyor (string, obje, eksik alanlar).
+   */
+  private normalizeChoices(choices: any): { id: string; text: string; type: string }[] {
+    if (!Array.isArray(choices)) {
+      this.logger.warn(`Choices is not an array, creating defaults`);
+      return [
+        { id: '1', text: 'Continue the conversation', type: 'dialogue' },
+        { id: '2', text: 'Explore the surroundings', type: 'exploration' },
+        { id: '3', text: 'Take a bold action', type: 'action' },
+        { id: '4', text: 'Make a careful decision', type: 'decision' },
+      ];
+    }
+
+    return choices.map((c: any, i: number) => {
+      if (typeof c === 'string') {
+        return { id: String(i + 1), text: c, type: 'action' };
+      }
+      return {
+        id: String(c.id ?? c._id ?? i + 1),
+        text: String(c.text ?? c.label ?? c.description ?? `Choice ${i + 1}`),
+        type: String(c.type ?? 'action'),
+      };
+    });
   }
 }
