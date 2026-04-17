@@ -1,8 +1,10 @@
-import { Controller, Post, Get, Body } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CreditsService } from './credits.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { Public } from '../../common/decorators/public.decorator';
+import { AdminAuthGuard } from '../../common/guards/admin-auth.guard';
 
 @ApiTags('Credits')
 @ApiBearerAuth()
@@ -23,8 +25,10 @@ export class CreditsController {
   }
 
   @Post('grant')
+  @Public()
+  @UseGuards(AdminAuthGuard)
   @ApiOperation({ summary: 'Grant credits (admin/webhook)' })
-  async grant(@CurrentUser() user: JwtPayload, @Body() body: { amount: number; reason: string }) {
-    return this.creditsService.grantCredits(user.sub, body.amount, body.reason);
+  async grant(@Body() body: { userId: string; amount: number; reason: string }) {
+    return this.creditsService.grantCredits(body.userId, body.amount, body.reason);
   }
 }

@@ -6,6 +6,7 @@ import { MatchmakingQueue, MatchmakingQueueSchema } from './schemas/matchmaking-
 import { UsersModule } from '../users/users.module';
 import { PresenceModule } from '../presence/presence.module';
 import { AuthModule } from '../auth/auth.module';
+import { MultiplayerModule } from '../multiplayer/multiplayer.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { AuthModule } from '../auth/auth.module';
     UsersModule,
     PresenceModule,
     AuthModule,
+    MultiplayerModule,
   ],
   providers: [MatchmakingGateway, MatchmakingService],
   exports: [MatchmakingService, MatchmakingGateway],

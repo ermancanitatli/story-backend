@@ -9,8 +9,8 @@ export class MultiplayerSession extends Document {
   @Prop({ required: true, type: Types.ObjectId, ref: 'User', index: true })
   guestId: Types.ObjectId;
 
-  @Prop({ required: true, type: Types.ObjectId, ref: 'Story' })
-  storyId: Types.ObjectId;
+  @Prop({ type: Types.ObjectId, ref: 'Story' })
+  storyId?: Types.ObjectId;
 
   @Prop({ enum: ['invite', 'character-selection', 'playing', 'ended', 'aborted'], default: 'invite' })
   phase: string;

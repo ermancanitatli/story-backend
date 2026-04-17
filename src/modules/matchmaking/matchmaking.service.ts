@@ -51,6 +51,12 @@ export class MatchmakingService {
 
     if (!entry?.matchedWith) return entry;
 
+    // Partner'ın entry'sine partnerAccepted = true yaz
+    await this.queueModel.findOneAndUpdate(
+      { userId: entry.matchedWith, matchedWith: new Types.ObjectId(userId) },
+      { partnerAccepted: true },
+    );
+
     // Partner da kabul etti mi?
     const partner = await this.queueModel.findOne({
       userId: entry.matchedWith,
@@ -67,6 +73,21 @@ export class MatchmakingService {
     }
 
     return entry;
+  }
+
+  /**
+   * Queue entry'lerine oluşturulan session ID'sini kaydet.
+   */
+  async setSessionId(userId: string, partnerId: string, sessionId: string): Promise<void> {
+    await this.queueModel.updateMany(
+      {
+        $or: [
+          { userId: new Types.ObjectId(userId), matchedWith: new Types.ObjectId(partnerId) },
+          { userId: new Types.ObjectId(partnerId), matchedWith: new Types.ObjectId(userId) },
+        ],
+      },
+      { sessionId },
+    );
   }
 
   /**

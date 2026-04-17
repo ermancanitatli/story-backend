@@ -32,6 +32,17 @@ export class MultiplayerService {
     });
   }
 
+  async createSessionFromMatchmaking(hostId: string, guestId: string): Promise<MultiplayerSession> {
+    return this.sessionModel.create({
+      hostId: new Types.ObjectId(hostId),
+      guestId: new Types.ObjectId(guestId),
+      phase: 'character-selection',
+      activePlayerId: new Types.ObjectId(hostId),
+      nextPlayerId: new Types.ObjectId(guestId),
+      emotionalStates: { intimacy: 0, anger: 0, worry: 0, trust: 0, excitement: 0, sadness: 0 },
+    });
+  }
+
   async getSession(sessionId: string): Promise<MultiplayerSession> {
     const session = await this.sessionModel.findById(sessionId);
     if (!session) throw new NotFoundException('Session not found');
@@ -49,11 +60,20 @@ export class MultiplayerService {
     else if (field === 'gender') update[isHost ? 'hostGender' : 'guestGender'] = value;
     else if (field === 'accepted') update[isHost ? 'hostAccepted' : 'guestAccepted'] = value;
 
-    const updated = await this.sessionModel.findByIdAndUpdate(sessionId, update, { new: true });
+    let updated = await this.sessionModel.findByIdAndUpdate(sessionId, update, { new: true });
 
-    // Both accepted → start playing
-    if (updated!.hostAccepted && updated!.guestAccepted && updated!.phase === 'character-selection') {
-      await this.sessionModel.findByIdAndUpdate(sessionId, { phase: 'playing' });
+    // Phase transition: invite → character-selection (both accepted)
+    if (updated!.hostAccepted && updated!.guestAccepted && updated!.phase === 'invite') {
+      updated = await this.sessionModel.findByIdAndUpdate(sessionId, { phase: 'character-selection' }, { new: true });
+    }
+
+    // Phase transition: character-selection → playing (both have name & gender)
+    if (
+      updated!.phase === 'character-selection' &&
+      updated!.hostName && updated!.guestName &&
+      updated!.hostGender && updated!.guestGender
+    ) {
+      updated = await this.sessionModel.findByIdAndUpdate(sessionId, { phase: 'playing' }, { new: true });
     }
 
     return updated!;

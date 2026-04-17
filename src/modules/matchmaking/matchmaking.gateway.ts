@@ -10,6 +10,7 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { MatchmakingService } from './matchmaking.service';
+import { MultiplayerService } from '../multiplayer/multiplayer.service';
 
 @WebSocketGateway({ namespace: '/matchmaking', cors: true })
 export class MatchmakingGateway {
@@ -18,6 +19,7 @@ export class MatchmakingGateway {
 
   constructor(
     private matchmakingService: MatchmakingService,
+    private multiplayerService: MultiplayerService,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {}
@@ -72,12 +74,17 @@ export class MatchmakingGateway {
     if (!partnerId) return;
 
     if (entry.status === 'completed') {
-      // İkisi de kabul etti
-      const sessionId = entry.sessionId || entry._id.toString();
+      // İkisi de kabul etti → gerçek multiplayer session oluştur
+      const session = await this.multiplayerService.createSessionFromMatchmaking(userId, partnerId);
+      const sessionId = session._id.toString();
+
+      // Queue entry'lerine sessionId kaydet
+      await this.matchmakingService.setSessionId(userId, partnerId, sessionId);
+
       client.emit('matchmaking:completed', { sessionId });
       this.server.to(`matchmaking:${partnerId}`).emit('matchmaking:completed', { sessionId });
     } else {
-      // Partner henüz kabul etmedi
+      // Partner henüz kabul etmedi — partner'a bildir
       this.server.to(`matchmaking:${partnerId}`).emit('matchmaking:partner-accepted', {});
     }
   }
