@@ -90,10 +90,12 @@ export class MultiplayerService {
       emotionalStates: { intimacy: 0, anger: 0, worry: 0, trust: 0, excitement: 0, sadness: 0 },
     });
 
-    // İlk AI sahnesini arka planda üret (session'ı bloklamadan)
-    this.generateInitialScene(session).catch((err) =>
-      this.logger.error(`Initial scene generation failed for session ${session._id}: ${(err as Error).message}`),
-    );
+    // İlk AI sahnesini senkron üret — iOS session fetch ettiğinde progress hazır olur
+    try {
+      await this.generateInitialScene(session);
+    } catch (err) {
+      this.logger.error(`Initial scene generation failed for session ${session._id}: ${(err as Error).message}`);
+    }
 
     return session;
   }

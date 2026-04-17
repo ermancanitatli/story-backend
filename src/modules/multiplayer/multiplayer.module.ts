@@ -8,6 +8,7 @@ import { StoriesModule } from '../stories/stories.module';
 import { AiModule } from '../ai/ai.module';
 import { UsersModule } from '../users/users.module';
 import { SocketModule } from '../socket/socket.module';
+import { FakeUsersModule } from '../fake-users/fake-users.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { SocketModule } from '../socket/socket.module';
     AiModule,
     UsersModule,
     forwardRef(() => SocketModule),
+    forwardRef(() => FakeUsersModule),
   ],
   controllers: [MultiplayerController],
   providers: [MultiplayerService],

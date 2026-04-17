@@ -196,14 +196,14 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // ─── Emit helpers (called from services / controllers) ─────
 
   emitSessionUpdate(sessionId: string, session: any) {
-    this.server.to(`mp:${sessionId}`).emit('session:updated', session);
+    this.server.to(`mp:${sessionId}`).emit('multiplayer:session-update', session);
   }
 
   emitProgressNew(sessionId: string, progress: any) {
-    this.server.to(`mp:${sessionId}`).emit('progress:new', progress);
+    this.server.to(`mp:${sessionId}`).emit('multiplayer:progress-new', progress);
   }
 
   emitSessionCompleted(sessionId: string, data: { endingType?: string }) {
-    this.server.to(`mp:${sessionId}`).emit('session:completed', data);
+    this.server.to(`mp:${sessionId}`).emit('multiplayer:ended', data);
   }
 }

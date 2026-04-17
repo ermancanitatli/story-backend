@@ -20,7 +20,7 @@ export class AuthService {
     @InjectModel(RefreshToken.name) private refreshTokenModel: Model<RefreshToken>,
   ) {
     this.refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET', 'change-me-refresh');
-    this.refreshExpires = this.configService.get<string>('JWT_REFRESH_EXPIRES', '30d');
+    this.refreshExpires = this.configService.get<string>('JWT_REFRESH_EXPIRES', '5y');
   }
 
   /**
@@ -92,7 +92,7 @@ export class AuthService {
 
     // Persist refresh token
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30); // 30 days
+    expiresAt.setFullYear(expiresAt.getFullYear() + 5); // 5 years
 
     await this.refreshTokenModel.create({
       userId: new Types.ObjectId(userId),

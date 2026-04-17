@@ -5,6 +5,8 @@ import { AppGateway } from '../socket/app.gateway';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
+import { FakeMoveService } from '../fake-users/fake-move.service';
+import { UsersService } from '../users/users.service';
 
 @ApiTags('Multiplayer')
 @ApiBearerAuth()
@@ -13,6 +15,8 @@ export class MultiplayerController {
   constructor(
     private multiplayerService: MultiplayerService,
     @Inject(forwardRef(() => AppGateway)) private appGateway: AppGateway,
+    @Inject(forwardRef(() => FakeMoveService)) private fakeMoveService: FakeMoveService,
+    private usersService: UsersService,
   ) {}
 
   @Post('invite')
@@ -85,6 +89,17 @@ export class MultiplayerController {
 
     if (progress.isEnding) {
       this.appGateway.emitSessionCompleted(id, { endingType: progress.endingType });
+    }
+
+    // Sonraki oyuncu fake user ise otomatik hamle planla
+    if (!progress.isEnding) {
+      const session = await this.multiplayerService.getSession(id);
+      if (session.activePlayerId) {
+        const nextUser = await this.usersService.findById(session.activePlayerId.toString());
+        if (nextUser?.isFake) {
+          this.fakeMoveService.scheduleFakeMove(id, session.activePlayerId.toString());
+        }
+      }
     }
 
     return progress;

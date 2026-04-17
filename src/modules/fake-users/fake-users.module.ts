@@ -4,6 +4,7 @@ import { FakeUsersController } from './fake-users.controller';
 import { FakeUsersService } from './fake-users.service';
 import { FakeMatchScheduler } from './fake-match.scheduler';
 import { FakeMatchOrchestrator } from './fake-match-orchestrator.service';
+import { FakeMoveService } from './fake-move.service';
 import { MatchmakingModule } from '../matchmaking/matchmaking.module';
 import { UsersModule } from '../users/users.module';
 import { AppSettingsModule } from '../app-settings/app-settings.module';
@@ -30,7 +31,7 @@ import {
     forwardRef(() => SocketModule),
   ],
   controllers: [FakeUsersController],
-  providers: [FakeUsersService, FakeMatchScheduler, FakeMatchOrchestrator],
-  exports: [FakeUsersService, FakeMatchOrchestrator],
+  providers: [FakeUsersService, FakeMatchScheduler, FakeMatchOrchestrator, FakeMoveService],
+  exports: [FakeUsersService, FakeMatchOrchestrator, FakeMoveService],
 })
 export class FakeUsersModule {}
