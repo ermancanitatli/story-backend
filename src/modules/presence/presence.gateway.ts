@@ -27,7 +27,7 @@ export class PresenceGateway implements OnGatewayConnection, OnGatewayDisconnect
   async handleConnection(client: Socket) {
     try {
       const token =
-        client.handshake.auth?.token || client.handshake.headers?.authorization?.replace('Bearer ', '');
+        client.handshake.auth?.token || (client.handshake.query?.token as string) || client.handshake.headers?.authorization?.replace('Bearer ', '');
       if (!token) {
         client.disconnect();
         return;

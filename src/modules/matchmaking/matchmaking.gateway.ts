@@ -26,7 +26,7 @@ export class MatchmakingGateway {
 
   private getUserId(client: Socket): string | null {
     try {
-      const token = client.handshake.auth?.token || client.handshake.headers?.authorization?.replace('Bearer ', '');
+      const token = client.handshake.auth?.token || (client.handshake.query?.token as string) || client.handshake.headers?.authorization?.replace('Bearer ', '');
       if (!token) return null;
       const payload = this.jwtService.verify(token, { secret: this.configService.get('JWT_ACCESS_SECRET') });
       return payload.sub;
