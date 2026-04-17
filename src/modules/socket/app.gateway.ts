@@ -139,7 +139,17 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     if (entry.status === 'completed') {
       // Both accepted -> create multiplayer session
-      const session = await this.multiplayerService.createSessionFromMatchmaking(userId, partnerId);
+      // Her iki oyuncunun dil bilgisini matchmaking queue'dan al
+      const partnerEntry = await this.matchmakingService.getQueueEntry(partnerId);
+      const hostLang = entry.languageCode || 'en';
+      const guestLang = partnerEntry?.languageCode || 'en';
+
+      const session = await this.multiplayerService.createSessionFromMatchmaking(
+        userId,
+        partnerId,
+        hostLang,
+        guestLang,
+      );
       const sessionId = session._id.toString();
 
       await this.matchmakingService.setSessionId(userId, partnerId, sessionId);
@@ -203,6 +213,41 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   emitProgressNew(sessionId: string, progress: any) {
     this.server.to(`mp:${sessionId}`).emit('multiplayer:progress-new', progress);
+  }
+
+  emitLocalizedProgress(
+    sessionId: string,
+    progress: any,
+    hostId: string,
+    guestId: string,
+    hostLang: string,
+    guestLang: string,
+  ) {
+    const hostProgress = this.buildLocalizedProgress(progress, hostLang);
+    const guestProgress = this.buildLocalizedProgress(progress, guestLang);
+
+    this.server.to(`user:${hostId}`).emit('multiplayer:progress-new', hostProgress);
+    this.server.to(`user:${guestId}`).emit('multiplayer:progress-new', guestProgress);
+  }
+
+  private buildLocalizedProgress(progress: any, lang: string): any {
+    // Tek dilli progress ise olduğu gibi dön
+    if (!progress.scenes) return progress;
+
+    // Çift dilli progress → kullanıcının diline göre düzleştir
+    const localized = { ...progress };
+    localized.currentScene =
+      progress.scenes[lang] ||
+      progress.scenes[Object.keys(progress.scenes)[0]] ||
+      progress.currentScene;
+    localized.choices =
+      progress.localizedChoices?.[lang] ||
+      progress.localizedChoices?.[Object.keys(progress.localizedChoices || {})[0]] ||
+      progress.choices;
+    // scenes ve localizedChoices'ı kaldır — iOS'a sadece currentScene ve choices gönder
+    delete localized.scenes;
+    delete localized.localizedChoices;
+    return localized;
   }
 
   emitSessionCompleted(sessionId: string, data: { endingType?: string }) {

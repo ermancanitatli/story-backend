@@ -2,20 +2,17 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 export interface GrokResponse {
-  currentScene: string;
-  choices: { id: string; text: string; type: string }[];
+  // Tek dilli (geriye uyumlu)
+  currentScene?: string;
+  choices?: { id: string; text: string; type: string }[];
+  // Çift dilli
+  scenes?: Record<string, string>;
+  localizedChoices?: Record<string, { id: string; text: string; type: string }[]>;
+  // Ortak
   effects?: {
+    emotionalChanges?: Record<string, number>;
     itemsGained?: string[];
     itemsLost?: string[];
-    relationshipChanges?: Record<string, string>;
-    emotionalChanges?: {
-      intimacy?: number;
-      anger?: number;
-      worry?: number;
-      trust?: number;
-      excitement?: number;
-      sadness?: number;
-    };
   };
   isEnding?: boolean;
   endingType?: string;
@@ -83,8 +80,10 @@ export class AiService {
         const parsed = JSON.parse(content) as GrokResponse;
 
         // Validate required fields
-        if (!parsed.currentScene || !Array.isArray(parsed.choices)) {
-          throw new Error('Invalid Grok response format: missing currentScene or choices');
+        const hasSingleLang = parsed.currentScene && Array.isArray(parsed.choices);
+        const hasBilingual = parsed.scenes && typeof parsed.scenes === 'object';
+        if (!hasSingleLang && !hasBilingual) {
+          throw new Error('Invalid Grok response format: missing currentScene/choices or scenes');
         }
 
         this.logger.log(`Grok API success (attempt ${attempt + 1}, tokens: ${maxTokens})`);

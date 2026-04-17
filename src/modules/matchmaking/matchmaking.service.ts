@@ -126,6 +126,17 @@ export class MatchmakingService {
   }
 
   /**
+   * Kullanıcının aktif (matched/completed) queue entry'sini döner.
+   * Gateway'de partner dil bilgisini almak için kullanılır.
+   */
+  async getQueueEntry(userId: string): Promise<MatchmakingQueue | null> {
+    return this.queueModel.findOne({
+      userId: new Types.ObjectId(userId),
+      status: { $in: ['matched', 'completed'] },
+    });
+  }
+
+  /**
    * Uyumlu eşleşme dene.
    */
   private async tryMatch(entry: MatchmakingQueue): Promise<MatchmakingQueue | null> {

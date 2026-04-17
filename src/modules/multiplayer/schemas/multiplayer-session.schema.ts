@@ -25,6 +25,8 @@ export class MultiplayerSession extends Document {
   @Prop() guestName?: string;
   @Prop() hostGender?: string;
   @Prop() guestGender?: string;
+  @Prop() hostLanguageCode?: string;
+  @Prop() guestLanguageCode?: string;
   @Prop({ default: false }) hostAccepted: boolean;
   @Prop({ default: false }) guestAccepted: boolean;
 

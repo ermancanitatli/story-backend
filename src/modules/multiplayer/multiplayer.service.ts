@@ -40,7 +40,12 @@ export class MultiplayerService {
    * rastgele hikaye seçilir ve doğrudan 'playing' phase'inde başlatılır.
    * İlk AI sahnesi arka planda üretilir.
    */
-  async createSessionFromMatchmaking(hostId: string, guestId: string): Promise<MultiplayerSession> {
+  async createSessionFromMatchmaking(
+    hostId: string,
+    guestId: string,
+    hostLanguage?: string,
+    guestLanguage?: string,
+  ): Promise<MultiplayerSession> {
     // Kullanıcı profillerini çek
     const [hostUser, guestUser] = await Promise.all([
       this.usersService.findById(hostId),
@@ -81,6 +86,8 @@ export class MultiplayerService {
       guestGender,
       hostAccepted: true,
       guestAccepted: true,
+      hostLanguageCode: hostLanguage || 'en',
+      guestLanguageCode: guestLanguage || 'en',
       storyClone,
       emotionalStates: { intimacy: 0, anger: 0, worry: 0, trust: 0, excitement: 0, sadness: 0 },
     });
@@ -100,6 +107,12 @@ export class MultiplayerService {
    */
   private async generateInitialScene(session: MultiplayerSession): Promise<void> {
     const clone = session.storyClone || {};
+
+    const isBilingual = session.hostLanguageCode !== session.guestLanguageCode;
+    const languages = isBilingual
+      ? [session.hostLanguageCode || 'en', session.guestLanguageCode || 'en']
+      : [session.hostLanguageCode || 'en'];
+
     const systemPrompt = buildSystemPrompt({
       storyTitle: clone.title || 'Interactive Story',
       storySummary: clone.summary || '',
@@ -111,20 +124,38 @@ export class MultiplayerService {
       hostName: session.hostName,
       guestName: session.guestName,
       activePlayerName: session.hostName,
+      languages,
     });
     const userMessage = buildUserMessage({ type: 'start', userChoice: '', recentHistory: [] });
 
     const grokResponse = await this.aiService.callGrokAPI({ systemPrompt, userMessage });
 
-    // Choices'ı normalize et — Grok bazen farklı format dönebiliyor
-    const normalizedChoices = this.normalizeChoices(grokResponse.choices);
+    // Çift dilli response normalize et
+    let sceneText: string;
+    let choicesData: any;
+    let scenes: Record<string, string> | undefined;
+    let localizedChoices: Record<string, any> | undefined;
+
+    if (grokResponse.scenes) {
+      // Çift dilli response
+      scenes = grokResponse.scenes;
+      localizedChoices = grokResponse.localizedChoices;
+      sceneText = grokResponse.scenes[languages[0]] || Object.values(grokResponse.scenes)[0] || '';
+      choicesData = grokResponse.localizedChoices?.[languages[0]] || Object.values(grokResponse.localizedChoices || {})[0] || [];
+    } else {
+      // Tek dilli response
+      sceneText = grokResponse.currentScene || '';
+      choicesData = grokResponse.choices || [];
+    }
 
     const progress = await this.progressModel.create({
       sessionId: session._id,
       activePlayerId: session.activePlayerId,
       turnOrder: 1,
-      currentScene: grokResponse.currentScene,
-      choices: normalizedChoices,
+      currentScene: sceneText,
+      choices: this.normalizeChoices(choicesData),
+      scenes,
+      localizedChoices,
       currentChapter: 1,
       effects: grokResponse.effects,
       isEnding: false,
@@ -192,6 +223,12 @@ export class MultiplayerService {
     const recentHistory = recentDocs.reverse().map((p) => p.currentScene);
 
     const clone = session.storyClone || {};
+
+    const isBilingual = session.hostLanguageCode !== session.guestLanguageCode;
+    const languages = isBilingual
+      ? [session.hostLanguageCode || 'en', session.guestLanguageCode || 'en']
+      : [session.hostLanguageCode || 'en'];
+
     const systemPrompt = buildSystemPrompt({
       storyTitle: clone.title || '',
       storySummary: clone.summary || '',
@@ -203,10 +240,27 @@ export class MultiplayerService {
       hostName: session.hostName,
       guestName: session.guestName,
       activePlayerName: session.nextPlayerId?.toString() === session.hostId?.toString() ? session.hostName : session.guestName,
+      languages,
     });
     const userMessage = buildUserMessage({ type: 'continue', userChoice: choice.text, recentHistory });
 
     const grokResponse = await this.aiService.callGrokAPI({ systemPrompt, userMessage });
+
+    // Çift dilli response normalize et
+    let sceneText: string;
+    let choicesArr: any;
+    let scenes: Record<string, string> | undefined;
+    let localizedChoices: Record<string, any> | undefined;
+
+    if (grokResponse.scenes) {
+      scenes = grokResponse.scenes;
+      localizedChoices = grokResponse.localizedChoices;
+      sceneText = grokResponse.scenes[languages[0]] || Object.values(grokResponse.scenes)[0] || '';
+      choicesArr = grokResponse.localizedChoices?.[languages[0]] || Object.values(grokResponse.localizedChoices || {})[0] || [];
+    } else {
+      sceneText = grokResponse.currentScene || '';
+      choicesArr = grokResponse.choices || [];
+    }
 
     // Create progress
     const newTurn = session.turnOrder + 1;
@@ -214,8 +268,10 @@ export class MultiplayerService {
       sessionId: session._id,
       activePlayerId: session.nextPlayerId,
       turnOrder: newTurn,
-      currentScene: grokResponse.currentScene,
-      choices: this.normalizeChoices(grokResponse.choices),
+      currentScene: sceneText,
+      choices: this.normalizeChoices(choicesArr),
+      scenes,
+      localizedChoices,
       currentChapter: session.currentChapter,
       effects: grokResponse.effects,
       isEnding: grokResponse.isEnding || false,

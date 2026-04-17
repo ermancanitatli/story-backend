@@ -186,10 +186,21 @@ export class FakeMatchOrchestrator implements OnModuleDestroy {
 
           if (entry.status === 'completed') {
             // İkisi de kabul etti -> session oluştur
+            // Gerçek kullanıcının dil bilgisini matchmaking queue'dan al
+            const realEntry = await this.queueModel.findOne({
+              userId: new Types.ObjectId(realUserId),
+              status: { $in: ['matched', 'completed'] },
+            });
+            const realLanguage = realEntry?.languageCode || 'en';
+            // Fake user da aynı dili kullanır (gerçek kullanıcının dilinde konuşmalı)
+            const fakeLanguage = realLanguage;
+
             const session =
               await this.multiplayerService.createSessionFromMatchmaking(
                 realUserId,
                 fakeUserId,
+                realLanguage,
+                fakeLanguage,
               );
             const sessionId = session._id.toString();
 

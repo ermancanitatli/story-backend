@@ -91,8 +91,16 @@ export class FakeMoveService implements OnModuleDestroy {
         type: randomChoice.type || 'action',
       });
 
-      // Socket event'lerini emit et
-      this.appGateway.emitProgressNew(sessionId, progress);
+      // Socket event'lerini emit et (dil bazlı lokalize)
+      // session değişkeni executeMove başında zaten fetch edildi
+      this.appGateway.emitLocalizedProgress(
+        sessionId,
+        progress,
+        session.hostId.toString(),
+        session.guestId.toString(),
+        session.hostLanguageCode || 'en',
+        session.guestLanguageCode || 'en',
+      );
 
       if (progress.isEnding) {
         this.appGateway.emitSessionCompleted(sessionId, { endingType: progress.endingType });

@@ -21,6 +21,12 @@ export class MultiplayerProgress extends Document {
   @Prop({ type: { id: { type: String }, text: { type: String }, type: { type: String } } })
   userChoice?: { id: string; text: string; type: string };
 
+  @Prop({ type: Object })
+  scenes?: Record<string, string>;  // { "tr": "...", "en": "..." }
+
+  @Prop({ type: Object })
+  localizedChoices?: Record<string, any>;  // { "tr": [...], "en": [...] }
+
   @Prop() characterRole?: string;
   @Prop({ default: 1 }) currentChapter: number;
   @Prop({ type: Object }) effects?: Record<string, any>;

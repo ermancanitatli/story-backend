@@ -39,6 +39,15 @@ function pickRandomCategories(count: number = 4): string[] {
   return shuffled.slice(0, count);
 }
 
+function getLanguageName(code: string): string {
+  const names: Record<string, string> = {
+    en: 'English', tr: 'Turkish', ar: 'Arabic', de: 'German',
+    es: 'Spanish', fr: 'French', it: 'Italian', ja: 'Japanese',
+    ko: 'Korean', pt: 'Portuguese', ru: 'Russian', zh: 'Chinese',
+  };
+  return names[code] || 'English';
+}
+
 export interface PromptParams {
   storyTitle: string;
   storySummary: string;
@@ -49,6 +58,7 @@ export interface PromptParams {
   playerName?: string;
   playerGender?: string;
   languageCode?: string;
+  languages?: string[];  // ['tr', 'en'] — çift dilli mod, undefined ise languageCode kullanılır
   emotionalStates?: Record<string, number>;
   censorship?: boolean; // PG-13 default
   recentHistory?: string[];
@@ -60,9 +70,18 @@ export interface PromptParams {
 
 export function buildSystemPrompt(params: PromptParams): string {
   const categories = pickRandomCategories(4);
-  const lang = params.languageCode || 'en';
-  const langInstruction = LANGUAGE_INSTRUCTIONS[lang] || LANGUAGE_INSTRUCTIONS['en'];
+  const languages = params.languages || [params.languageCode || 'en'];
+  const isBilingual = languages.length > 1;
   const censor = params.censorship !== false;
+
+  let langInstruction: string;
+  if (isBilingual) {
+    const lang1Name = getLanguageName(languages[0]);
+    const lang2Name = getLanguageName(languages[1]);
+    langInstruction = `Write ALL scene text and choice texts in BOTH ${lang1Name} (${languages[0]}) and ${lang2Name} (${languages[1]}). Use the bilingual response format shown below.`;
+  } else {
+    langInstruction = LANGUAGE_INSTRUCTIONS[languages[0]] || LANGUAGE_INSTRUCTIONS['en'];
+  }
 
   let prompt = `You are an interactive story narrator. You create engaging, immersive story scenes with meaningful choices.
 
@@ -116,7 +135,42 @@ ${
 - Write the scene from the active player's perspective`;
   }
 
-  prompt += `
+  if (isBilingual) {
+    const l0 = languages[0];
+    const l1 = languages[1];
+    prompt += `
+
+## Response Format (JSON):
+{
+  "scenes": {
+    "${l0}": "scene text in first language",
+    "${l1}": "scene text in second language"
+  },
+  "choices": {
+    "${l0}": [
+      {"id": "1", "text": "choice in first language", "type": "action"},
+      {"id": "2", "text": "choice in first language", "type": "dialogue"},
+      {"id": "3", "text": "choice in first language", "type": "exploration"},
+      {"id": "4", "text": "choice in first language", "type": "decision"}
+    ],
+    "${l1}": [
+      {"id": "1", "text": "choice in second language", "type": "action"},
+      {"id": "2", "text": "choice in second language", "type": "dialogue"},
+      {"id": "3", "text": "choice in second language", "type": "exploration"},
+      {"id": "4", "text": "choice in second language", "type": "decision"}
+    ]
+  },
+  "effects": {
+    "itemsGained": [],
+    "itemsLost": [],
+    "relationshipChanges": {},
+    "emotionalChanges": {"intimacy":0,"anger":0,"worry":0,"trust":0,"excitement":0,"sadness":0}
+  },
+  "isEnding": false,
+  "endingType": null
+}`;
+  } else {
+    prompt += `
 
 ## Response Format (JSON):
 {
@@ -136,6 +190,7 @@ ${
   "isEnding": false,
   "endingType": null
 }`;
+  }
 
   return prompt;
 }

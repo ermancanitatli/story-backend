@@ -84,8 +84,16 @@ export class MultiplayerController {
       type: body.choiceType,
     });
 
-    // Emit real-time events
-    this.appGateway.emitProgressNew(id, progress);
+    // Emit real-time events (dil bazlı lokalize)
+    const session = await this.multiplayerService.getSession(id);
+    this.appGateway.emitLocalizedProgress(
+      id,
+      progress,
+      session.hostId.toString(),
+      session.guestId.toString(),
+      session.hostLanguageCode || 'en',
+      session.guestLanguageCode || 'en',
+    );
 
     if (progress.isEnding) {
       this.appGateway.emitSessionCompleted(id, { endingType: progress.endingType });
