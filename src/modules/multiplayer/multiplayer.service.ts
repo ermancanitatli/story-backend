@@ -187,6 +187,29 @@ export class MultiplayerService {
       .exec();
   }
 
+  /**
+   * Multiplayer session'ları sil (kullanıcı yetki kontrolüyle).
+   */
+  async deleteSessions(userId: string, sessionIds: string[]): Promise<number> {
+    const oid = new Types.ObjectId(userId);
+    const objectIds = sessionIds.map((id) => new Types.ObjectId(id));
+
+    // Sadece kullanıcının katıldığı session'ları sil
+    const result = await this.sessionModel.deleteMany({
+      _id: { $in: objectIds },
+      $or: [{ hostId: oid }, { guestId: oid }],
+    });
+
+    // İlgili progress kayıtlarını da temizle
+    if (result.deletedCount > 0) {
+      await this.progressModel.deleteMany({
+        sessionId: { $in: objectIds },
+      });
+    }
+
+    return result.deletedCount;
+  }
+
   async getSession(sessionId: string): Promise<MultiplayerSession> {
     const session = await this.sessionModel.findById(sessionId);
     if (!session) throw new NotFoundException('Session not found');

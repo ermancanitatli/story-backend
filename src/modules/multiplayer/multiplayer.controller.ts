@@ -36,6 +36,16 @@ export class MultiplayerController {
     return this.multiplayerService.getUserSessions(user.sub);
   }
 
+  @Post('batch-delete')
+  @ApiOperation({ summary: 'Delete multiplayer sessions' })
+  async deleteSessions(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { sessionIds: string[] },
+  ) {
+    const deleted = await this.multiplayerService.deleteSessions(user.sub, body.sessionIds);
+    return { deleted };
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get multiplayer session' })
   async getSession(@Param('id', ParseObjectIdPipe) id: string) {
