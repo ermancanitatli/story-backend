@@ -34,6 +34,22 @@ const LANGUAGE_INSTRUCTIONS: Record<string, string> = {
   zh: '用中文撰写所有内容。',
 };
 
+// Tam isim veya BCP-47 tag gelirse ISO kısa koduna normalize et
+const LANGUAGE_NAME_TO_CODE: Record<string, string> = {
+  english: 'en', turkish: 'tr', arabic: 'ar', german: 'de',
+  spanish: 'es', french: 'fr', italian: 'it', japanese: 'ja',
+  korean: 'ko', portuguese: 'pt', russian: 'ru', chinese: 'zh',
+};
+
+function normalizeLanguageCode(input?: string): string {
+  if (!input) return 'en';
+  const trimmed = input.trim().toLowerCase();
+  if (LANGUAGE_INSTRUCTIONS[trimmed]) return trimmed;
+  if (LANGUAGE_NAME_TO_CODE[trimmed]) return LANGUAGE_NAME_TO_CODE[trimmed];
+  const baseCode = trimmed.split(/[-_]/)[0];
+  return LANGUAGE_INSTRUCTIONS[baseCode] ? baseCode : 'en';
+}
+
 function pickRandomCategories(count: number = 4): string[] {
   const shuffled = [...CHOICE_CATEGORIES].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count);
@@ -70,7 +86,8 @@ export interface PromptParams {
 
 export function buildSystemPrompt(params: PromptParams): string {
   const categories = pickRandomCategories(4);
-  const languages = params.languages || [params.languageCode || 'en'];
+  const rawLanguages = params.languages || [params.languageCode || 'en'];
+  const languages = rawLanguages.map(normalizeLanguageCode);
   const isBilingual = languages.length > 1;
   const censor = params.censorship !== false;
 
