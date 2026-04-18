@@ -26,6 +26,7 @@ import { StorageModule } from './modules/storage/storage.module';
 import { FakeUsersModule } from './modules/fake-users/fake-users.module';
 import { HealthModule } from './modules/health/health.module';
 import { SocketModule } from './modules/socket/socket.module';
+import { NotificationModule } from './modules/notifications/notification.module';
 
 @Module({
   imports: [
@@ -89,6 +90,7 @@ import { SocketModule } from './modules/socket/socket.module';
     FakeUsersModule,
     HealthModule,
     SocketModule,
+    NotificationModule,
   ],
   providers: [
     {

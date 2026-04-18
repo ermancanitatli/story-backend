@@ -7,6 +7,7 @@ import { FriendRequest, FriendRequestSchema } from './schemas/friend-request.sch
 import { FriendAlert, FriendAlertSchema } from './schemas/friend-alert.schema';
 import { UsersModule } from '../users/users.module';
 import { SocketModule } from '../socket/socket.module';
+import { NotificationModule } from '../notifications/notification.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { SocketModule } from '../socket/socket.module';
     ]),
     UsersModule,
     forwardRef(() => SocketModule),
+    NotificationModule,
   ],
   controllers: [FriendshipsController],
   providers: [FriendshipsService],

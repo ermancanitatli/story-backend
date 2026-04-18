@@ -6,6 +6,7 @@ import { FriendRequest } from './schemas/friend-request.schema';
 import { FriendAlert } from './schemas/friend-alert.schema';
 import { AppGateway } from '../socket/app.gateway';
 import { UsersService } from '../users/users.service';
+import { NotificationService } from '../notifications/notification.service';
 
 @Injectable()
 export class FriendshipsService {
@@ -15,6 +16,7 @@ export class FriendshipsService {
     @InjectModel(FriendAlert.name) private alertModel: Model<FriendAlert>,
     @Inject(forwardRef(() => AppGateway)) private appGateway: AppGateway,
     private usersService: UsersService,
+    private notificationService: NotificationService,
   ) {}
 
   async sendRequest(fromUserId: string, toUserId: string): Promise<FriendRequest> {
@@ -47,6 +49,15 @@ export class FriendshipsService {
     // Realtime bildirim: alıcıya arkadaşlık isteği geldiğini haber ver
     this.appGateway.server.to(`user:${toUserId}`).emit('friend:request-received', { fromUserId });
 
+    // Push bildirimi: uygulama kapalıyken de isteği ilet
+    const fromUser = await this.usersService.findById(fromUserId);
+    void this.notificationService.sendToUserId(
+      toUserId,
+      'Friend Request',
+      `${fromUser?.displayName ?? 'Someone'} sent you a friend request`,
+      { type: 'friend_request', fromUserId },
+    );
+
     return request;
   }
 
@@ -78,6 +89,15 @@ export class FriendshipsService {
     this.appGateway.server
       .to(`user:${request.fromUserId.toString()}`)
       .emit('friend:accepted', { friendshipId: friendship._id.toString() });
+
+    // Push bildirimi: isteği gönderen kişi uygulamayı açmamışsa bildir
+    const acceptingUser = await this.usersService.findById(userId);
+    void this.notificationService.sendToUserId(
+      request.fromUserId.toString(),
+      'Friend Request Accepted',
+      `${acceptingUser?.displayName ?? 'Someone'} accepted your friend request`,
+      { type: 'friend_accepted' },
+    );
 
     return friendship;
   }
