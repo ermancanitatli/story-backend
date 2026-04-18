@@ -54,4 +54,21 @@ export class FriendshipsController {
     await this.friendshipsService.removeFriend(user.sub, id);
     return { success: true };
   }
+
+  // MARK: - Invite by Handle (Deeplink)
+
+  @Get('invite/:handle')
+  @ApiOperation({ summary: 'Check if invite handle is valid' })
+  async checkInviteHandle(@Param('handle') handle: string) {
+    return this.friendshipsService.validateInviteHandle(handle);
+  }
+
+  @Post('invite/accept')
+  @ApiOperation({ summary: 'Accept invite by user handle (deeplink)' })
+  async acceptInviteByHandle(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { handle: string },
+  ) {
+    return this.friendshipsService.acceptInviteByHandle(user.sub, body.handle);
+  }
 }

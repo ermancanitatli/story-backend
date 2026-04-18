@@ -54,6 +54,7 @@ export class StorySessionsService {
       storyProgress: 0,
       emotionalStates: { intimacy: 0, anger: 0, worry: 0, trust: 0, excitement: 0, sadness: 0 },
       lastPlayedAt: new Date(),
+      languageCode: dto.languageCode,
     });
 
     // İlk Grok çağrısı
@@ -96,6 +97,7 @@ export class StorySessionsService {
       session,
       type: 'continue',
       userChoice: dto.choiceText,
+      languageCode: session.languageCode,
     });
 
     return progress;

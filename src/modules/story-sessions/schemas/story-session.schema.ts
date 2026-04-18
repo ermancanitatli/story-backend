@@ -61,6 +61,9 @@ export class StorySession extends Document {
 
   @Prop()
   lastProgressId?: string;
+
+  @Prop()
+  languageCode?: string;
 }
 
 export const StorySessionSchema = SchemaFactory.createForClass(StorySession);
