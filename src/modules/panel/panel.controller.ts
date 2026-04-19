@@ -284,6 +284,31 @@ export class PanelController {
     };
   }
 
+  @Get('notifications')
+  @Render('panel/notifications/composer')
+  showNotifications(@Req() req: Request & { session: PanelSession }) {
+    return {
+      title: 'Bildirimler',
+      currentPath: req.path,
+      username: req.session?.username || 'Admin',
+      breadcrumbs: [{ label: 'Bildirimler' }],
+      locales: [
+        'en',
+        'tr',
+        'ar',
+        'de',
+        'es',
+        'fr',
+        'it',
+        'ja',
+        'ko',
+        'pt',
+        'ru',
+        'zh',
+      ],
+    };
+  }
+
   @Get('audit')
   async showAudit(
     @Req() req: Request & { session: PanelSession },

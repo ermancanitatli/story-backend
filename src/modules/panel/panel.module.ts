@@ -20,6 +20,7 @@ import { SuperadminGuard } from './guards/superadmin.guard';
 import { SocketModule } from '../socket/socket.module';
 import { NotificationModule } from '../notifications/notification.module';
 import { StoriesModule } from '../stories/stories.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { StoriesModule } from '../stories/stories.module';
     forwardRef(() => SocketModule),
     NotificationModule,
     StoriesModule,
+    StorageModule,
   ],
   controllers: [
     PanelController,

@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsIn,
+  IsISO8601,
   IsObject,
   IsOptional,
   IsString,
@@ -44,6 +45,10 @@ export class SendNotificationDto {
   @IsOptional()
   @IsObject()
   data?: Record<string, any>;
+
+  @IsOptional()
+  @IsISO8601()
+  sendAt?: string;
 }
 
 export class EstimateNotificationDto {

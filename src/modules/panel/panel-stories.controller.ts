@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -9,18 +10,25 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { Public } from '../../common/decorators/public.decorator';
 import { SessionAuthGuard } from './guards/session-auth.guard';
 import { StoriesService } from '../stories/stories.service';
+import { StorageService } from '../storage/storage.service';
 import { CreateStoryDto } from '../stories/dto/create-story.dto';
 import { UpdateStoryDto } from '../stories/dto/update-story.dto';
 import { ListStoryQueryDto } from '../stories/dto/list-story-query.dto';
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
 @Controller('panel/api/stories')
 @Public()
 @UseGuards(SessionAuthGuard)
 export class PanelStoriesController {
-  constructor(private stories: StoriesService) {}
+  constructor(
+    private stories: StoriesService,
+    private storage: StorageService,
+  ) {}
 
   @Get()
   list(@Query() query: ListStoryQueryDto) {
@@ -57,5 +65,30 @@ export class PanelStoriesController {
   async activeSessions(@Param('id') id: string) {
     const count = await this.stories.activeSessionCount(id);
     return { count };
+  }
+
+  @Post(':id/images/presign')
+  async presignImageUpload(
+    @Param('id') storyId: string,
+    @Body() body: { contentType: string; kind?: 'cover' | 'gallery' | 'character' },
+  ) {
+    const ct = body.contentType?.toLowerCase();
+    if (!ct || !ALLOWED_IMAGE_TYPES.includes(ct)) {
+      throw new BadRequestException(
+        'İzin verilen türler: ' + ALLOWED_IMAGE_TYPES.join(', '),
+      );
+    }
+    const ext = ct.split('/')[1].replace('jpeg', 'jpg');
+    const imageId = randomUUID();
+    const subdir = body.kind === 'character' ? 'characters' : 'images';
+    const path = `stories/${storyId}/${subdir}/${imageId}.${ext}`;
+
+    const { uploadUrl, publicUrl } = await this.storage.presignPutObject(
+      path,
+      ct,
+      15 * 60,
+    );
+
+    return { uploadUrl, publicUrl, imageId, path };
   }
 }
