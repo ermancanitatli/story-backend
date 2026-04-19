@@ -1,34 +1,44 @@
 /**
- * Chapter Transition Test — rasgele choice seçerek pacing davranışını gözlemler.
+ * Chapter Transition Test — single + multiplayer mod'da rasgele choice
+ * seçerek pacing, rolling summary ve bridge summary davranışlarını gözlemler.
  *
- * Usage:
- *   BASE_URL=http://localhost:3000 STORY_ID=69e13e00312e6ba98b92db0a MAX_STEPS=30 \
+ * Usage (single player):
+ *   STORY_ID=69e13e00312e6ba98b92db0a MAX_STEPS=20 LANGUAGE=tr \
+ *     npx ts-node scripts/test-chapter-transition.ts
+ *
+ * Usage (multiplayer — matchmaking ile):
+ *   MODE=multi STORY_ID=... MAX_STEPS=20 LANGUAGE_HOST=tr LANGUAGE_GUEST=en \
  *     npx ts-node scripts/test-chapter-transition.ts
  *
  * ENV:
- *   BASE_URL     — default http://localhost:3000
- *   STORY_ID     — zorunlu
- *   MAX_STEPS    — default 30
- *   LANGUAGE     — default 'tr'
- *   SEED         — opsiyonel, tekrar edilebilir rasgelelik için
- *   DRY_PRINT    — 'full' ise tüm scene basılır; default 'short' (140 char)
- *   CLEANUP      — '1' ise bitişte session silinir
- *   INSPECT_SUMMARY — '1' ise her 5 step sonrası DB'den rollingSummary/
- *                    bridgeSummaries çekilip basılır (default 1)
- *   MONGO_URI    — inspection için; default prod URI
+ *   MODE           — 'single' (default) veya 'multi'
+ *   BASE_URL       — default http://localhost:3000
+ *   STORY_ID       — zorunlu (her iki modda da)
+ *   MAX_STEPS      — default 30 (multi'de turn sayısı)
+ *   LANGUAGE       — single mod: default 'tr'
+ *   LANGUAGE_HOST  — multi mod: default 'tr'
+ *   LANGUAGE_GUEST — multi mod: default 'en' (bilingual test için farklı dil)
+ *   SEED           — deterministic rasgelelik
+ *   DRY_PRINT      — 'full' tüm scene, default 'short' (140 char)
+ *   CLEANUP        — '1' ise session silinir
+ *   INSPECT_SUMMARY — '1' (default) DB'den rolling/bridge summary basılır
+ *   MONGO_URI      — prod default
  *
- * Script pacing assertion'ları yapar (MIN=5, SOFT=7, MAX=10) ve
- * fail olursa exit(1) döner. Özet kalitesi için INSPECT_SUMMARY logları.
+ * Exit code: pacing/summary assertion fail ise 1, pass ise 0.
  */
 
 import { MongoClient, ObjectId } from 'mongodb';
+import { io as ioClient, Socket } from 'socket.io-client';
 
 type ApiHeaders = Record<string, string>;
 
+const MODE = (process.env.MODE || 'single').toLowerCase();
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const STORY_ID = process.env.STORY_ID;
 const MAX_STEPS = parseInt(process.env.MAX_STEPS || '30', 10);
 const LANGUAGE = process.env.LANGUAGE || 'tr';
+const LANGUAGE_HOST = process.env.LANGUAGE_HOST || 'tr';
+const LANGUAGE_GUEST = process.env.LANGUAGE_GUEST || 'en';
 const PRINT_MODE = process.env.DRY_PRINT === 'full' ? 'full' : 'short';
 const CLEANUP = process.env.CLEANUP === '1';
 const SEED = process.env.SEED ? parseInt(process.env.SEED, 10) : null;
@@ -176,7 +186,8 @@ function printSummarySnapshot(snap: SummarySnapshot) {
   console.log('');
 }
 
-async function main() {
+async function runSinglePlayer() {
+  console.log(`[mode] SINGLE PLAYER`);
   console.log(`[config] BASE=${BASE_URL} STORY=${STORY_ID} MAX=${MAX_STEPS} LANG=${LANGUAGE} SEED=${SEED ?? 'random'} INSPECT_SUMMARY=${INSPECT_SUMMARY}`);
 
   // Mongo client (inspection için) — opsiyonel, başarısız olursa sadece summary logları gösterilmez
@@ -522,6 +533,355 @@ async function main() {
     process.exit(1);
   }
   console.log(`\n✅ tüm assertion'lar pass (${passes.length})`);
+}
+
+// =============================================================================
+// MULTIPLAYER MODE
+// =============================================================================
+
+interface Player {
+  userId: string;
+  token: string;
+  name: string;
+  gender: 'male' | 'female';
+  language: string;
+  headers: ApiHeaders;
+}
+
+async function authenticatePlayer(label: string, gender: 'male' | 'female', language: string): Promise<Player> {
+  const deviceId = `test-mp-${label}-${Date.now()}-${Math.floor(rand() * 10000)}`;
+  const auth = await call('POST', '/api/auth/anonymous', { deviceId });
+  const token: string | undefined = auth.accessToken || auth.access_token;
+  const userId = auth.userId || auth.user?._id;
+  if (!token) throw new Error(`[${label}] token alınamadı`);
+  return {
+    userId,
+    token,
+    name: label === 'host' ? 'Alice' : 'Bob',
+    gender,
+    language,
+    headers: { Authorization: `Bearer ${token}` },
+  };
+}
+
+async function matchmakingFlow(host: Player, guest: Player, storyId: string): Promise<string> {
+  // Socket.IO bağlantısı — iki ayrı client
+  const hostSocket: Socket = ioClient(BASE_URL, {
+    auth: { token: host.token },
+    transports: ['websocket'],
+  });
+  const guestSocket: Socket = ioClient(BASE_URL, {
+    auth: { token: guest.token },
+    transports: ['websocket'],
+  });
+
+  // Her iki client bağlantıyı bekle
+  await Promise.all([
+    new Promise<void>((res) => hostSocket.on('connect', () => res())),
+    new Promise<void>((res) => guestSocket.on('connect', () => res())),
+  ]);
+  console.log(`[mp] socket bağlandı — host=${hostSocket.id?.substring(0, 8)} guest=${guestSocket.id?.substring(0, 8)}`);
+
+  // Join matchmaking
+  const matchedPromise = Promise.all([
+    new Promise<any>((res) => hostSocket.once('matchmaking:matched', (data) => res(data))),
+    new Promise<any>((res) => guestSocket.once('matchmaking:matched', (data) => res(data))),
+  ]);
+
+  hostSocket.emit('matchmaking:join', {
+    storyId,
+    playerGender: host.gender,
+    languageCode: host.language,
+  });
+  // Kısa gecikme — host queue'ya girsin, sonra guest gelsin (eşleşme tetiklenir)
+  await new Promise((r) => setTimeout(r, 500));
+  guestSocket.emit('matchmaking:join', {
+    storyId,
+    playerGender: guest.gender,
+    languageCode: guest.language,
+  });
+
+  const [hostMatched, guestMatched] = await Promise.race([
+    matchedPromise,
+    new Promise<any>((_, rej) => setTimeout(() => rej(new Error('matchmaking timeout 20s')), 20000)),
+  ]);
+  console.log(`[mp] matched! host partnerId=${hostMatched?.partnerId?.substring(0, 8)} guest partnerId=${guestMatched?.partnerId?.substring(0, 8)}`);
+
+  // Her iki oyuncu accept
+  const sessionCreatedPromise = new Promise<string>((res) => {
+    const onUpdate = (data: any) => {
+      if (data?.session?._id) {
+        hostSocket.off('multiplayer:session-update', onUpdate);
+        guestSocket.off('multiplayer:session-update', onUpdate);
+        res(data.session._id);
+      }
+    };
+    hostSocket.on('multiplayer:session-update', onUpdate);
+    guestSocket.on('multiplayer:session-update', onUpdate);
+  });
+
+  hostSocket.emit('matchmaking:accept');
+  await new Promise((r) => setTimeout(r, 300));
+  guestSocket.emit('matchmaking:accept');
+
+  // Alternatif: REST GET /multiplayer ile sürekli kontrol et
+  let sessionId: string | null = null;
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    try {
+      const sessions: any[] = await call('GET', '/api/multiplayer', undefined, host.headers);
+      const active = sessions.find((s) => s.phase === 'playing' || s.phase === 'character-selection');
+      if (active) {
+        sessionId = active._id;
+        break;
+      }
+    } catch {}
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
+  hostSocket.disconnect();
+  guestSocket.disconnect();
+
+  if (!sessionId) throw new Error('matchmaking session oluşturulamadı (15s timeout)');
+  return sessionId;
+}
+
+async function runMultiplayer() {
+  console.log(`[mode] MULTIPLAYER — bilingual test`);
+  console.log(`[config] BASE=${BASE_URL} STORY=${STORY_ID} MAX=${MAX_STEPS} LANG_HOST=${LANGUAGE_HOST} LANG_GUEST=${LANGUAGE_GUEST} SEED=${SEED ?? 'random'}`);
+
+  // Mongo client
+  let mongoClient: MongoClient | null = null;
+  if (INSPECT_SUMMARY) {
+    try {
+      mongoClient = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 3000 });
+      await mongoClient.connect();
+      console.log(`[inspect] mongo bağlandı`);
+    } catch (err) {
+      console.warn(`[inspect] mongo bağlanamadı: ${(err as Error).message}`);
+    }
+  }
+
+  // İki oyuncu auth
+  const host = await authenticatePlayer('host', 'male', LANGUAGE_HOST);
+  const guest = await authenticatePlayer('guest', 'female', LANGUAGE_GUEST);
+  console.log(`[auth] host=${host.userId.substring(0, 8)} (${host.language}) guest=${guest.userId.substring(0, 8)} (${guest.language})`);
+
+  // Matchmaking ile eşleştir
+  let sessionId: string;
+  try {
+    sessionId = await matchmakingFlow(host, guest, STORY_ID!);
+  } catch (err) {
+    console.error(`[mp] matchmaking başarısız: ${(err as Error).message}`);
+    console.error(`    socket matchmaking prod-only olabilir veya fake match devrede olabilir`);
+    if (mongoClient) await mongoClient.close();
+    process.exit(1);
+  }
+  console.log(`[session] sid=${sessionId}`);
+
+  // Session state ready mi?
+  let session: any;
+  for (let i = 0; i < 10; i++) {
+    session = await call('GET', `/api/multiplayer/${sessionId}`, undefined, host.headers);
+    if (session.phase === 'playing') break;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  if (session.phase !== 'playing') {
+    console.error(`[mp] session playing'e ulaşamadı (phase=${session.phase})`);
+    if (mongoClient) await mongoClient.close();
+    process.exit(1);
+  }
+
+  const totalChapters = session.storyClone?.chapters?.length || 0;
+  const storyTitle = session.storyClone?.title || '(unknown)';
+  console.log(`[session] story="${storyTitle}" totalChapters=${totalChapters} phase=${session.phase}`);
+  console.log('─'.repeat(140));
+  console.log(' turn  active  ch  suggst tr end scene (by active player language)');
+  console.log('─'.repeat(140));
+
+  const summarySnapshots: SummarySnapshot[] = [];
+  const turnLogs: Array<{ turn: number; activeId: string; chapter: number; suggest?: boolean; transition: boolean; scene: string }> = [];
+  let currentActiveId: string = session.activePlayerId;
+
+  // İlk progress çek
+  let lastProgress: any = await call(
+    'GET',
+    `/api/multiplayer/${sessionId}/progress`,
+    undefined,
+    currentActiveId === host.userId ? host.headers : guest.headers,
+  );
+  const firstTurn = lastProgress?.turnOrder || 1;
+  turnLogs.push({
+    turn: firstTurn,
+    activeId: currentActiveId,
+    chapter: lastProgress?.currentChapter || 1,
+    transition: !!lastProgress?.isChapterTransition,
+    scene: lastProgress?.currentScene || '',
+  });
+  const firstActiveLabel = currentActiveId === host.userId ? 'HOST' : 'GUEST';
+  console.log(
+    `  ${String(firstTurn).padStart(3)}  ${firstActiveLabel.padEnd(5)}    ${String(lastProgress?.currentChapter || 1).padStart(2)}    -          ${truncate(lastProgress?.currentScene, 100)}`,
+  );
+
+  // Turn döngüsü
+  for (let turnNum = firstTurn + 1; turnNum <= MAX_STEPS; turnNum++) {
+    const isHostTurn = currentActiveId === host.userId;
+    const activePlayer = isHostTurn ? host : guest;
+    const activeLabel = isHostTurn ? 'HOST' : 'GUEST';
+
+    // Aktif oyuncu son progress'i kendi dilinde çeker
+    try {
+      lastProgress = await call(
+        'GET',
+        `/api/multiplayer/${sessionId}/progress`,
+        undefined,
+        activePlayer.headers,
+      );
+    } catch (err) {
+      console.error(`[turn ${turnNum}] progress fetch err: ${(err as Error).message}`);
+      break;
+    }
+
+    if (lastProgress?.isEnding) {
+      console.log('[loop] isEnding=true — story ended');
+      break;
+    }
+
+    const choices = lastProgress?.choices || [];
+    const validChoices = choices
+      .map((c: any, idx: number) => ({ c, idx, text: extractChoiceText(c) }))
+      .filter((x: any) => x.text);
+    if (validChoices.length === 0) {
+      console.error(`[turn ${turnNum}] tüm choice'lar bozuk: ${JSON.stringify(choices).substring(0, 200)}`);
+      break;
+    }
+    const pick = validChoices[Math.floor(rand() * validChoices.length)];
+
+    try {
+      const result: any = await call(
+        'POST',
+        `/api/multiplayer/${sessionId}/choice`,
+        { choiceId: String(pick.c.id || pick.idx + 1), choiceText: pick.text, choiceType: pick.c.type || 'action' },
+        activePlayer.headers,
+      );
+      turnLogs.push({
+        turn: turnNum,
+        activeId: currentActiveId,
+        chapter: result?.currentChapter || 1,
+        suggest: result?.effects?.suggestChapterTransition,
+        transition: !!result?.isChapterTransition,
+        scene: result?.currentScene || '',
+      });
+
+      const sug = result?.effects?.suggestChapterTransition === true ? 'YES' : result?.effects?.suggestChapterTransition === false ? 'no ' : '???';
+      const tr = result?.isChapterTransition ? '✨ TR' : '  ';
+      const end = result?.isEnding ? '🏁' : ' ';
+      console.log(
+        `  ${String(turnNum).padStart(3)}  ${activeLabel.padEnd(5)}    ${String(result?.currentChapter || 1).padStart(2)}    ${sug.padEnd(4)}  ${tr}  ${end}  ${truncate(result?.currentScene, 100)}`,
+      );
+
+      // Turn swap — server yaptı, biz sadece takip ediyoruz
+      // activePlayerId response'ta dönmüyor — session'dan tekrar çek
+      if (turnNum % 3 === 0 || result?.isChapterTransition) {
+        const sess = await call('GET', `/api/multiplayer/${sessionId}`, undefined, host.headers);
+        currentActiveId = sess.activePlayerId;
+      } else {
+        // Tahmin: basit swap
+        currentActiveId = isHostTurn ? guest.userId : host.userId;
+      }
+
+      // Özet inspection
+      if (mongoClient && turnNum % 5 === 0) {
+        await new Promise((r) => setTimeout(r, 2500));
+        const db = mongoClient.db();
+        const s: any = await db.collection('multiplayer_sessions').findOne({ _id: new ObjectId(sessionId) });
+        if (s) {
+          const snap: SummarySnapshot = {
+            atStep: turnNum,
+            rollingText: s.rollingSummary?.text || '',
+            rollingUpdatedAtStep: s.rollingSummary?.updatedAtStep || 0,
+            bridgeKeys: Object.keys(s.bridgeSummaries || {}),
+            bridgesFull: s.bridgeSummaries || {},
+          };
+          summarySnapshots.push(snap);
+          printSummarySnapshot(snap);
+        }
+      }
+
+      if (result?.isEnding) break;
+    } catch (err) {
+      console.error(`[turn ${turnNum}] choice submit err: ${(err as Error).message}`);
+      break;
+    }
+  }
+
+  console.log('─'.repeat(140));
+
+  // Özet
+  const hostTurns = turnLogs.filter((t) => t.activeId === host.userId).length;
+  const guestTurns = turnLogs.filter((t) => t.activeId === guest.userId).length;
+  const transitions = turnLogs.filter((t) => t.transition).length;
+  console.log(`\n[mp summary]`);
+  console.log(`  Host turn: ${hostTurns}, Guest turn: ${guestTurns}, Toplam: ${turnLogs.length}`);
+  console.log(`  Transitions: ${transitions}`);
+  console.log(`  Host lang: ${host.language}, Guest lang: ${guest.language} (bilingual test)`);
+
+  // Final summary inspection
+  if (mongoClient) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const db = mongoClient.db();
+    const s: any = await db.collection('multiplayer_sessions').findOne({ _id: new ObjectId(sessionId) });
+    if (s) {
+      const snap: SummarySnapshot = {
+        atStep: turnLogs.length,
+        rollingText: s.rollingSummary?.text || '',
+        rollingUpdatedAtStep: s.rollingSummary?.updatedAtStep || 0,
+        bridgeKeys: Object.keys(s.bridgeSummaries || {}),
+        bridgesFull: s.bridgeSummaries || {},
+      };
+      console.log(`\n[mp summary] FINAL STATE:`);
+      printSummarySnapshot(snap);
+    }
+    await mongoClient.close();
+  }
+
+  // Cleanup
+  if (CLEANUP) {
+    try {
+      await call('POST', '/api/multiplayer/batch-delete', { sessionIds: [sessionId] }, host.headers);
+      console.log(`[cleanup] session silindi`);
+    } catch (err) {
+      console.warn(`[cleanup] silinemedi: ${(err as Error).message}`);
+    }
+  } else {
+    console.log(`\n[cleanup] atlandı — sid=${sessionId}`);
+  }
+
+  console.log(`\n✅ multiplayer test tamamlandı (${turnLogs.length} turn)`);
+}
+
+function extractChoiceText(c: any): string | null {
+  if (!c) return null;
+  if (typeof c.text === 'string' && c.text.trim().length > 0) return c.text.trim();
+  if (typeof c.text === 'object' && c.text) {
+    const found = Object.values(c.text).find(
+      (v) => typeof v === 'string' && (v as string).trim().length > 0,
+    );
+    if (found) return (found as string).trim();
+  }
+  return null;
+}
+
+// =============================================================================
+// ENTRY POINT
+// =============================================================================
+
+async function main() {
+  if (MODE === 'multi' || MODE === 'multiplayer') {
+    await runMultiplayer();
+  } else {
+    await runSinglePlayer();
+  }
 }
 
 main().catch((err) => {
