@@ -79,6 +79,7 @@ export class PanelController {
   async submitLogin(
     @Body('username') username: string,
     @Body('password') password: string,
+    @Body('remember') remember: string | undefined,
     @Req() req: Request & { session: PanelSession },
     @Res() res: Response,
   ) {
@@ -92,6 +93,13 @@ export class PanelController {
 
     req.session.adminId = user._id.toString();
     req.session.username = user.username;
+    if (remember === 'on') {
+      (req.session.cookie as any).maxAge = 30 * 24 * 60 * 60 * 1000; // 30 gün
+      (req.session as any).rememberMe = true;
+    } else {
+      (req.session.cookie as any).maxAge = 24 * 60 * 60 * 1000; // 24 saat
+      (req.session as any).rememberMe = false;
+    }
     const mustChangePassword = (user as any).mustChangePassword === true;
     req.session.save((err) => {
       if (err) {

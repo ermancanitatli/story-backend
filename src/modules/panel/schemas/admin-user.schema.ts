@@ -22,6 +22,15 @@ export class AdminUser extends Document {
 
   @Prop({ default: false })
   mustChangePassword: boolean;
+
+  @Prop()
+  totpSecret?: string;
+
+  @Prop({ default: false })
+  totpEnabled: boolean;
+
+  @Prop({ type: [String], default: [] })
+  recoveryCodes?: string[];
 }
 
 export const AdminUserSchema = SchemaFactory.createForClass(AdminUser);
