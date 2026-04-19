@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hata <%= statusCode %></title>
+  <link rel="stylesheet" href="/panel-assets/css/styles.css" />
+</head>
+<body class="antialiased flex items-center justify-center h-full bg-background">
+  <div class="text-center max-w-md p-8">
+    <h1 class="text-6xl font-bold text-destructive mb-4"><%= statusCode %></h1>
+    <p class="text-lg mb-6"><%= message %></p>
+    <% if (requestId) { %>
+      <p class="text-xs text-muted-foreground mb-6">ID: <%= requestId %></p>
+    <% } %>
+    <a href="/panel" class="kt-btn kt-btn-primary">Panele Dön</a>
+  </div>
+</body>
+</html>

@@ -15,6 +15,7 @@ import { AppModule } from './app.module';
 import { resolveSessionSecret } from './modules/panel/session-secret.helper';
 import { winstonConfig } from './common/logger/winston.config';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware';
+import { ApiJsonExceptionFilter } from './common/filters/api-json-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -115,6 +116,11 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
+
+  // Global JSON error filter — API rotaları için standart envelope.
+  // `/panel/*` HTML rotaları scoped `PanelHtmlExceptionFilter` ile
+  // controller düzeyinde override edilir (CC-02).
+  app.useGlobalFilters(new ApiJsonExceptionFilter());
 
   // Swagger
   const swaggerConfig = new DocumentBuilder()

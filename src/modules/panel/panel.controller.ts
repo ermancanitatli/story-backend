@@ -6,12 +6,14 @@ import {
   Render,
   Req,
   Res,
+  UseFilters,
   UseGuards,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { SessionAuthGuard } from './guards/session-auth.guard';
 import { PanelPublic } from './decorators/panel-public.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { PanelHtmlExceptionFilter } from '../../common/filters/panel-html-exception.filter';
 import { AdminUsersService } from './admin-users.service';
 
 type PanelSession = {
@@ -24,6 +26,7 @@ type PanelSession = {
 @Controller('panel')
 @Public()
 @UseGuards(SessionAuthGuard)
+@UseFilters(PanelHtmlExceptionFilter)
 export class PanelController {
   constructor(private readonly adminUsersService: AdminUsersService) {}
 
