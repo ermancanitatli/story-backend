@@ -564,85 +564,70 @@ async function authenticatePlayer(label: string, gender: 'male' | 'female', lang
   };
 }
 
-async function matchmakingFlow(host: Player, guest: Player, storyId: string): Promise<string> {
-  // Socket.IO bağlantısı — iki ayrı client
-  const hostSocket: Socket = ioClient(BASE_URL, {
-    auth: { token: host.token },
-    transports: ['websocket'],
-  });
-  const guestSocket: Socket = ioClient(BASE_URL, {
-    auth: { token: guest.token },
-    transports: ['websocket'],
-  });
+/**
+ * Manuel invite flow — 2 arkadaş multi oynuyor simülasyonu.
+ * Matchmaking/WebSocket yok, direkt REST API ile tüm akış.
+ *
+ * Steps:
+ *   1. Host: POST /multiplayer/invite {guestId, storyId} → session (phase=invite)
+ *   2. Mongo'ya hostLanguageCode/guestLanguageCode yaz (REST endpoint yok)
+ *   3. Her iki user: POST /multiplayer/:id/accept
+ *   4. Her iki user: PATCH name + gender → phase otomatik 'playing' olur
+ */
+async function manualInviteFlow(
+  host: Player,
+  guest: Player,
+  storyId: string,
+  mongoClient: MongoClient | null,
+): Promise<string> {
+  // 1. Host invite oluşturur
+  const session: any = await call(
+    'POST',
+    '/api/multiplayer/invite',
+    { guestId: guest.userId, storyId },
+    host.headers,
+  );
+  const sessionId = session._id;
+  console.log(`[mp] session created sid=${sessionId} phase=${session.phase}`);
 
-  // Her iki client bağlantıyı bekle
-  await Promise.all([
-    new Promise<void>((res) => hostSocket.on('connect', () => res())),
-    new Promise<void>((res) => guestSocket.on('connect', () => res())),
-  ]);
-  console.log(`[mp] socket bağlandı — host=${hostSocket.id?.substring(0, 8)} guest=${guestSocket.id?.substring(0, 8)}`);
-
-  // Join matchmaking
-  const matchedPromise = Promise.all([
-    new Promise<any>((res) => hostSocket.once('matchmaking:matched', (data) => res(data))),
-    new Promise<any>((res) => guestSocket.once('matchmaking:matched', (data) => res(data))),
-  ]);
-
-  hostSocket.emit('matchmaking:join', {
-    storyId,
-    playerGender: host.gender,
-    languageCode: host.language,
-  });
-  // Kısa gecikme — host queue'ya girsin, sonra guest gelsin (eşleşme tetiklenir)
-  await new Promise((r) => setTimeout(r, 500));
-  guestSocket.emit('matchmaking:join', {
-    storyId,
-    playerGender: guest.gender,
-    languageCode: guest.language,
-  });
-
-  const [hostMatched, guestMatched] = await Promise.race([
-    matchedPromise,
-    new Promise<any>((_, rej) => setTimeout(() => rej(new Error('matchmaking timeout 20s')), 20000)),
-  ]);
-  console.log(`[mp] matched! host partnerId=${hostMatched?.partnerId?.substring(0, 8)} guest partnerId=${guestMatched?.partnerId?.substring(0, 8)}`);
-
-  // Her iki oyuncu accept
-  const sessionCreatedPromise = new Promise<string>((res) => {
-    const onUpdate = (data: any) => {
-      if (data?.session?._id) {
-        hostSocket.off('multiplayer:session-update', onUpdate);
-        guestSocket.off('multiplayer:session-update', onUpdate);
-        res(data.session._id);
-      }
-    };
-    hostSocket.on('multiplayer:session-update', onUpdate);
-    guestSocket.on('multiplayer:session-update', onUpdate);
-  });
-
-  hostSocket.emit('matchmaking:accept');
-  await new Promise((r) => setTimeout(r, 300));
-  guestSocket.emit('matchmaking:accept');
-
-  // Alternatif: REST GET /multiplayer ile sürekli kontrol et
-  let sessionId: string | null = null;
-  const deadline = Date.now() + 15000;
-  while (Date.now() < deadline) {
-    try {
-      const sessions: any[] = await call('GET', '/api/multiplayer', undefined, host.headers);
-      const active = sessions.find((s) => s.phase === 'playing' || s.phase === 'character-selection');
-      if (active) {
-        sessionId = active._id;
-        break;
-      }
-    } catch {}
-    await new Promise((r) => setTimeout(r, 1000));
+  // 2. Mongo'ya language code yaz (REST endpoint yok — pragmatik test çözümü)
+  if (mongoClient) {
+    await mongoClient.db().collection('multiplayer_sessions').updateOne(
+      { _id: new ObjectId(sessionId) },
+      {
+        $set: {
+          hostLanguageCode: host.language,
+          guestLanguageCode: guest.language,
+        },
+      },
+    );
+    console.log(`[mp] language set: host=${host.language} guest=${guest.language}`);
   }
 
-  hostSocket.disconnect();
-  guestSocket.disconnect();
+  // 3. Her iki user accept
+  await call('POST', `/api/multiplayer/${sessionId}/accept`, {}, host.headers);
+  await call('POST', `/api/multiplayer/${sessionId}/accept`, {}, guest.headers);
+  console.log(`[mp] both accepted → character-selection`);
 
-  if (!sessionId) throw new Error('matchmaking session oluşturulamadı (15s timeout)');
+  // 4. Character selection — name + gender
+  await call('PATCH', `/api/multiplayer/${sessionId}/name`, { name: host.name }, host.headers);
+  await call('PATCH', `/api/multiplayer/${sessionId}/gender`, { gender: host.gender }, host.headers);
+  await call('PATCH', `/api/multiplayer/${sessionId}/name`, { name: guest.name }, guest.headers);
+  await call('PATCH', `/api/multiplayer/${sessionId}/gender`, { gender: guest.gender }, guest.headers);
+  console.log(`[mp] characters selected — host="${host.name}" (${host.gender}) guest="${guest.name}" (${guest.gender})`);
+
+  // Phase'in playing'e geçmesini bekle
+  let phaseReady = false;
+  for (let i = 0; i < 15; i++) {
+    const s: any = await call('GET', `/api/multiplayer/${sessionId}`, undefined, host.headers);
+    if (s.phase === 'playing') {
+      phaseReady = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 800));
+  }
+  if (!phaseReady) throw new Error('session playing phase\'ine geçemedi');
+
   return sessionId;
 }
 
@@ -667,17 +652,15 @@ async function runMultiplayer() {
   const guest = await authenticatePlayer('guest', 'female', LANGUAGE_GUEST);
   console.log(`[auth] host=${host.userId.substring(0, 8)} (${host.language}) guest=${guest.userId.substring(0, 8)} (${guest.language})`);
 
-  // Matchmaking ile eşleştir
+  // Manuel invite ile eşleştir (iki arkadaş simülasyonu)
   let sessionId: string;
   try {
-    sessionId = await matchmakingFlow(host, guest, STORY_ID!);
+    sessionId = await manualInviteFlow(host, guest, STORY_ID!, mongoClient);
   } catch (err) {
-    console.error(`[mp] matchmaking başarısız: ${(err as Error).message}`);
-    console.error(`    socket matchmaking prod-only olabilir veya fake match devrede olabilir`);
+    console.error(`[mp] invite flow başarısız: ${(err as Error).message}`);
     if (mongoClient) await mongoClient.close();
     process.exit(1);
   }
-  console.log(`[session] sid=${sessionId}`);
 
   // Session state ready mi?
   let session: any;
