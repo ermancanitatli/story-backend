@@ -13,6 +13,10 @@ export interface GrokResponse {
     emotionalChanges?: Record<string, number>;
     itemsGained?: string[];
     itemsLost?: string[];
+    // AI'nın "bu sahne chapter için doğal bir kapanış" sinyali —
+    // pacingHint='soft'|'pressure' modunda AI bunu true set eder, sonraki
+    // step transition olarak işlem görür.
+    suggestChapterTransition?: boolean;
   };
   isEnding?: boolean;
   endingType?: string;

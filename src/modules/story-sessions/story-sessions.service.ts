@@ -10,7 +10,16 @@ import { CreateSessionDto } from './dto/create-session.dto';
 import { SubmitChoiceDto } from './dto/submit-choice.dto';
 
 const EMOTION_MULTIPLIER = 3;
-const STEPS_PER_CHAPTER = 8;
+
+// Chapter transition kuralları (esnek pacing):
+//   1..MIN_STEPS-1   → AI'a sorma, normal akış
+//   MIN_STEPS..SOFT_STEPS → AI kararı: chapter kapanışı yapmak istiyor mu?
+//   (SOFT_STEPS+1)..MAX_STEPS-1 → AI'a "hikayeyi chapter sonuna yönlendir" direktifi
+//   MAX_STEPS → zorla transition
+// Son chapter'da hiçbir tetikleme yok — hikaye isEnding ile kapanır.
+const MIN_STEPS_PER_CHAPTER = 5;
+const SOFT_STEPS_PER_CHAPTER = 7;
+const MAX_STEPS_PER_CHAPTER = 10;
 
 @Injectable()
 export class StorySessionsService {
@@ -211,20 +220,66 @@ export class StorySessionsService {
       .map((p) => p.currentScene)
       .filter(Boolean);
 
-    // === CHAPTER TRANSITION DETECTION (Grok çağrısından ÖNCE) ===
-    // Bu step chapter boundary'yi geçiyor mu? (yeni chapter'a girişin ilk sahnesi)
-    const newChapterStepPreview = session.chapterStepCount + 1;
-    const willTransition =
-      type !== 'start' && newChapterStepPreview >= STEPS_PER_CHAPTER;
-
-    // willTransition=true ise bir sonraki chapter'ın direktifini kullanıyoruz.
-    // Aksi halde mevcut chapter'ın direktifi.
+    // === CHAPTER TRANSITION DECISION (esnek pacing) ===
+    // Kurallar:
+    //   1..4  → normal akış, chapter transition tetiklenmez
+    //   5..7  → AI'a "kapanış doğal mı?" sor (suggestChapterTransition flag)
+    //   8..9  → AI'a "hikayeyi chapter sonuna yönlendir" direktifi (pressure)
+    //   10    → zorla transition
+    //   Son chapter → hiçbir tetikleme yok (isEnding ile kapanır)
     const locale = params.languageCode || 'en';
     const currentChapterIdx = session.currentChapter - 1; // 0-based
     const currentChapterData: any =
       clone?.chapters && currentChapterIdx >= 0 && currentChapterIdx < clone.chapters.length
         ? clone.chapters[currentChapterIdx]
         : null;
+    const totalChapters = clone?.chapters?.length || 0;
+    const isLastChapter =
+      totalChapters > 0 && session.currentChapter >= totalChapters;
+
+    const nextStepCount = session.chapterStepCount + 1; // bu çağrı bittiğinde chapterStepCount bu olacak
+    const isStartCall = type === 'start';
+
+    // Pacing durumları
+    const inSoftWindow =
+      !isStartCall &&
+      !isLastChapter &&
+      nextStepCount >= MIN_STEPS_PER_CHAPTER &&
+      nextStepCount <= SOFT_STEPS_PER_CHAPTER;
+    const inPressureWindow =
+      !isStartCall &&
+      !isLastChapter &&
+      nextStepCount > SOFT_STEPS_PER_CHAPTER &&
+      nextStepCount < MAX_STEPS_PER_CHAPTER;
+    const mustForceTransition =
+      !isStartCall && !isLastChapter && nextStepCount >= MAX_STEPS_PER_CHAPTER;
+
+    // pacingHint: AI'ya normal scene generation'da verilecek pacing talimatı
+    // 'soft'    → "natural chapter ending olabilir, suggestChapterTransition=true döndür"
+    // 'pressure'→ "hikayeyi chapter kapanışına yönlendir, doğal bir kapanış bul"
+    // 'force'   → bu bir transition — ama henüz kullanmıyoruz (willTransition farklı)
+    // 'none'    → normal akış
+    let pacingHint: 'none' | 'soft' | 'pressure' = 'none';
+    if (inSoftWindow) pacingHint = 'soft';
+    else if (inPressureWindow) pacingHint = 'pressure';
+
+    // Bu çağrı yeni chapter'a geçişin ilk sahnesi mi?
+    // Karar verme mantığı: force → evet; pressure/soft → AI'nın önceki sahneden gelen
+    // suggestChapterTransition flag'ine göre karar verilir. İlk çağrıda bunu bilmiyoruz
+    // (Grok'tan henüz cevap gelmedi). Bu yüzden willTransition iki noktada hesaplanır:
+    //   (a) Şimdi (bu fonksiyonun başında): sadece 'force' için true
+    //   (b) Grok cevabı geldikten sonra: soft/pressure window'da AI suggest ettiyse true
+    let willTransition = mustForceTransition;
+
+    // Önceki progress'in suggestChapterTransition flag'ini kontrol et —
+    // AI bir önceki step'te "kapanış hazır" dediyse bu step'i transition say.
+    const lastProgress = recentProgressDocs[0]; // en son progress (reverse öncesi)
+    const lastSuggested = (lastProgress as any)?.effects?.suggestChapterTransition === true;
+    if (!isStartCall && !isLastChapter && lastSuggested && nextStepCount >= MIN_STEPS_PER_CHAPTER) {
+      willTransition = true;
+    }
+
+    // Transition target chapter data
     const nextChapterIdx = willTransition ? session.currentChapter : -1;
     const nextChapterData: any =
       willTransition && clone?.chapters && nextChapterIdx < clone.chapters.length
@@ -304,6 +359,9 @@ export class StorySessionsService {
       transitionMode,
       transitionDirective,
       previousChapterBridge,
+      pacingHint,
+      isLastChapter,
+      totalChapters,
     };
 
     // === Grok çağrısı (gerekirse retry) ===
@@ -387,7 +445,8 @@ export class StorySessionsService {
     let newChapter = session.currentChapter;
     let isChapterTransition = false;
 
-    if (newChapterStep >= STEPS_PER_CHAPTER && !grokResponse.isEnding) {
+    // Transition zaten yukarıda (willTransition) kararlaştırıldı — burası sadece uygular
+    if (willTransition && !grokResponse.isEnding && !isLastChapter) {
       newChapter += 1;
       isChapterTransition = true;
     }
