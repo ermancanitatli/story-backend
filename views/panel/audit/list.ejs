@@ -15,120 +15,80 @@
     'UPDATE_PREMIUM', 'LOGIN', 'LOGOUT', 'PASSWORD_CHANGE', 'ROLE_CHANGE',
   ];
 %>
-<!DOCTYPE html>
-<html class="h-full" data-kt-theme="true" data-kt-theme-mode="light" dir="ltr" lang="tr">
-<head>
-  <title>Audit Log — Story Admin</title>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/panel-assets/media/app/favicon-32x32.png" />
-  <link rel="shortcut icon" href="/panel-assets/media/app/favicon.ico" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
-  <link rel="stylesheet" href="/panel-assets/vendors/keenicons/styles.bundle.css" />
-  <link rel="stylesheet" href="/panel-assets/css/styles.css" />
-</head>
-<body class="antialiased flex h-full text-base text-foreground bg-background demo1 kt-sidebar-fixed kt-header-fixed">
-  <script>
-    const defaultThemeMode = 'light';
-    let themeMode;
-    if (document.documentElement) {
-      if (localStorage.getItem('kt-theme')) {
-        themeMode = localStorage.getItem('kt-theme');
-      } else {
-        themeMode = defaultThemeMode;
-      }
-      document.documentElement.classList.add(themeMode);
-    }
-  </script>
 
-  <div class="flex grow">
-    <%- include('../partials/sidebar', { currentPath: currentPath, username: username }) %>
-    <div class="flex flex-col grow">
-      <%- include('../partials/header', { title: title, breadcrumbs: breadcrumbs, username: username }) %>
-      <main class="grow p-5 lg:p-7.5">
-        <div class="flex flex-col gap-5">
-          <!-- Filter card -->
-          <div class="kt-card">
-            <div class="kt-card-header">
-              <h3 class="kt-card-title">Filtreler</h3>
-              <div class="text-xs text-secondary-foreground">
-                Kayıt: <span id="audit-total">—</span>
-              </div>
-            </div>
-            <div class="kt-card-content">
-              <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div class="flex flex-col gap-1">
-                  <label class="kt-form-label text-xs" for="action-filter">Action</label>
-                  <select id="action-filter" class="kt-input">
-                    <% actionOptions.forEach(function(a) { %>
-                      <option value="<%= a %>"><%= a || '— hepsi —' %></option>
-                    <% }); %>
-                  </select>
-                </div>
-                <div class="flex flex-col gap-1">
-                  <label class="kt-form-label text-xs" for="target-filter">Target User ID</label>
-                  <input id="target-filter" type="text" class="kt-input" placeholder="user _id" />
-                </div>
-                <div class="flex flex-col gap-1">
-                  <label class="kt-form-label text-xs" for="admin-filter">Admin ID</label>
-                  <input id="admin-filter" type="text" class="kt-input" placeholder="admin _id" />
-                </div>
-                <div class="flex items-end gap-2">
-                  <button id="clear-filters" class="kt-btn kt-btn-outline" type="button">
-                    <i class="ki-filled ki-cross-circle"></i>
-                    <span>Temizle</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Logs table -->
-          <div class="kt-card">
-            <div class="kt-card-header">
-              <h3 class="kt-card-title">Audit Log</h3>
-            </div>
-            <div class="kt-card-content p-0 overflow-x-auto">
-              <table class="w-full text-sm">
-                <thead class="bg-muted/40 text-secondary-foreground">
-                  <tr>
-                    <th class="text-start px-4 py-2 font-medium">Zaman</th>
-                    <th class="text-start px-4 py-2 font-medium">Admin</th>
-                    <th class="text-start px-4 py-2 font-medium">Action</th>
-                    <th class="text-start px-4 py-2 font-medium">Resource</th>
-                    <th class="text-start px-4 py-2 font-medium">Target</th>
-                    <th class="text-start px-4 py-2 font-medium">IP</th>
-                    <th class="text-start px-4 py-2 font-medium">Reason / Meta</th>
-                  </tr>
-                </thead>
-                <tbody id="audit-tbody">
-                  <tr>
-                    <td colspan="7" class="px-4 py-8 text-center text-secondary-foreground">
-                      Yükleniyor…
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="kt-card-footer flex items-center justify-end gap-3 p-4 border-t border-border">
-              <button id="load-more" class="kt-btn kt-btn-sm kt-btn-outline hidden" type="button">
-                <i class="ki-filled ki-down"></i>
-                <span>Daha fazla yükle</span>
-              </button>
-            </div>
-          </div>
+<div class="flex flex-col gap-5">
+  <!-- Filter card -->
+  <div class="kt-card">
+    <div class="kt-card-header">
+      <h3 class="kt-card-title">Filtreler</h3>
+      <div class="text-xs text-secondary-foreground">
+        Kayıt: <span id="audit-total">—</span>
+      </div>
+    </div>
+    <div class="kt-card-content">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label text-xs" for="action-filter">Action</label>
+          <select id="action-filter" class="kt-input">
+            <% actionOptions.forEach(function(a) { %>
+              <option value="<%= a %>"><%= a || '— hepsi —' %></option>
+            <% }); %>
+          </select>
         </div>
-      </main>
-      <%- include('../partials/footer') %>
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label text-xs" for="target-filter">Target User ID</label>
+          <input id="target-filter" type="text" class="kt-input" placeholder="user _id" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label text-xs" for="admin-filter">Admin ID</label>
+          <input id="admin-filter" type="text" class="kt-input" placeholder="admin _id" />
+        </div>
+        <div class="flex items-end gap-2">
+          <button id="clear-filters" class="kt-btn kt-btn-outline" type="button">
+            <i class="ki-filled ki-cross-circle"></i>
+            <span>Temizle</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 
-  <script src="/panel-assets/js/core.bundle.js"></script>
-  <script src="/panel-assets/vendors/ktui/ktui.min.js"></script>
-  <script src="/panel-assets/js/panel-toast.js"></script>
-  <script src="/panel-assets/js/panel-api.js"></script>
-  <script src="/panel-assets/js/audit-logs.js"></script>
-</body>
-</html>
+  <!-- Logs table -->
+  <div class="kt-card">
+    <div class="kt-card-header">
+      <h3 class="kt-card-title">Audit Log</h3>
+    </div>
+    <div class="kt-card-content p-0 overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-muted/40 text-secondary-foreground">
+          <tr>
+            <th class="text-start px-4 py-2 font-medium">Zaman</th>
+            <th class="text-start px-4 py-2 font-medium">Admin</th>
+            <th class="text-start px-4 py-2 font-medium">Action</th>
+            <th class="text-start px-4 py-2 font-medium">Resource</th>
+            <th class="text-start px-4 py-2 font-medium">Target</th>
+            <th class="text-start px-4 py-2 font-medium">IP</th>
+            <th class="text-start px-4 py-2 font-medium">Reason / Meta</th>
+          </tr>
+        </thead>
+        <tbody id="audit-tbody">
+          <tr>
+            <td colspan="7" class="px-4 py-8 text-center text-secondary-foreground">
+              Yükleniyor…
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="kt-card-footer flex items-center justify-end gap-3 p-4 border-t border-border">
+      <button id="load-more" class="kt-btn kt-btn-sm kt-btn-outline hidden" type="button">
+        <i class="ki-filled ki-down"></i>
+        <span>Daha fazla yükle</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="/panel-assets/js/audit-logs.js"></script>
 
 <%- include('../partials/shell-footer') %>

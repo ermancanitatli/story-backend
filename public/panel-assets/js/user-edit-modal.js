@@ -11,6 +11,8 @@
     modalEl.style.position = 'fixed';
     modalEl.style.inset = '0';
     modalEl.style.zIndex = '9999';
+    // Başlangıçta gizli — açıldığında display:flex'e çevrilir
+    if (modalEl.classList.contains('hidden')) modalEl.style.display = 'none';
     return modalEl;
   }
   if (document.readyState === 'loading') {
@@ -21,13 +23,14 @@
 
   async function open(userId) {
     currentUserId = userId;
-    const el = document.getElementById('user-edit-modal');
+    const el = ensureModalPromoted() || document.getElementById('user-edit-modal');
     if (!el) {
       console.error('[user-edit-modal] #user-edit-modal element bulunamadı');
       window.panelToast?.error('Modal yüklenemedi');
       return;
     }
     el.classList.remove('hidden');
+    el.style.display = 'flex'; // inline display:flex — hidden class'ı ezse bile görünsün
     try {
       const detail = await window.panelApi.get(`/panel/api/users/${userId}`);
       const u = detail.user || detail;
@@ -51,7 +54,12 @@
   }
 
   window.openUserEditModal = open;
-  window.closeUserEditModal = () => document.getElementById('user-edit-modal').classList.add('hidden');
+  window.closeUserEditModal = () => {
+    const el = document.getElementById('user-edit-modal');
+    if (!el) return;
+    el.classList.add('hidden');
+    el.style.display = 'none';
+  };
 
   // Tab switch
   document.addEventListener('click', e => {
