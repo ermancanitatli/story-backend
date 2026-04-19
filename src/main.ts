@@ -12,6 +12,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
 import * as session from 'express-session';
 import RedisStore from 'connect-redis';
+import { json, urlencoded } from 'express';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { WinstonModule } from 'nest-winston';
 import { join } from 'path';
@@ -31,6 +32,11 @@ async function bootstrap() {
     rawBody: true,
     logger: WinstonModule.createLogger(winstonConfig),
   });
+
+  // Body parser limit — default 100kb yetmiyor (story PATCH chapters/mediaItems
+  // büyük payload'lar içeriyor). 25MB'a çıkar.
+  app.use(json({ limit: '25mb' }));
+  app.use(urlencoded({ extended: true, limit: '25mb' }));
 
   // Request correlation id — must run before everything else so downstream
   // middleware / guards / controllers can read req.id and ALS store.
