@@ -17,6 +17,29 @@ export class StoriesController {
     return this.storiesService.findAll(pagination);
   }
 
+  @Get('sync')
+  @ApiOperation({ summary: 'Incremental sync for client caches' })
+  @ApiResponse({ status: 200, description: 'Stories updated since given timestamp' })
+  async sync(@Query('since') since?: string) {
+    const storyModel = (this.storiesService as any).storyModel;
+    const filter: any = { isPublished: true, deletedAt: { $exists: false } };
+    if (since) {
+      const sinceDate = new Date(since);
+      if (!isNaN(sinceDate.getTime())) {
+        filter.updatedAt = { $gt: sinceDate };
+      }
+    }
+    const stories = await storyModel
+      .find(filter)
+      .sort({ updatedAt: -1 })
+      .lean()
+      .exec();
+    return {
+      stories,
+      serverTime: new Date().toISOString(),
+    };
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get story by ID' })
   @ApiResponse({ status: 200, description: 'Story details' })
