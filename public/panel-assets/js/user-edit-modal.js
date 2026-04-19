@@ -1,9 +1,33 @@
 (function() {
   let currentUserId = null;
 
+  // Modal'ı body'e taşı — Metronic transform'lu parent position:fixed'i bozar
+  function ensureModalPromoted() {
+    const modalEl = document.getElementById('user-edit-modal');
+    if (!modalEl) return null;
+    if (modalEl.parentElement !== document.body) {
+      document.body.appendChild(modalEl);
+    }
+    modalEl.style.position = 'fixed';
+    modalEl.style.inset = '0';
+    modalEl.style.zIndex = '9999';
+    return modalEl;
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', ensureModalPromoted);
+  } else {
+    ensureModalPromoted();
+  }
+
   async function open(userId) {
     currentUserId = userId;
-    document.getElementById('user-edit-modal').classList.remove('hidden');
+    const el = document.getElementById('user-edit-modal');
+    if (!el) {
+      console.error('[user-edit-modal] #user-edit-modal element bulunamadı');
+      window.panelToast?.error('Modal yüklenemedi');
+      return;
+    }
+    el.classList.remove('hidden');
     try {
       const detail = await window.panelApi.get(`/panel/api/users/${userId}`);
       const u = detail.user || detail;
@@ -62,7 +86,7 @@
       window.panelToast?.success('Kaydedildi');
       window.closeUserEditModal();
       if (typeof window.reloadUsersTable === 'function') window.reloadUsersTable();
-    } catch {}
+    } catch (err) { console.error('[user-edit-modal]', err); window.panelToast?.error('İşlem başarısız: ' + (err?.body?.message || err?.message || 'bilinmiyor')); }
   });
 
   // Ban / Unban
@@ -74,14 +98,14 @@
       await window.panelApi.post(`/panel/api/users/${currentUserId}/ban`, { reason, until });
       window.panelToast?.success('Banlandı');
       open(currentUserId);
-    } catch {}
+    } catch (err) { console.error('[user-edit-modal]', err); window.panelToast?.error('İşlem başarısız: ' + (err?.body?.message || err?.message || 'bilinmiyor')); }
   });
   document.getElementById('btn-unban').addEventListener('click', async () => {
     try {
       await window.panelApi.post(`/panel/api/users/${currentUserId}/unban`, {});
       window.panelToast?.success('Ban kaldırıldı');
       open(currentUserId);
-    } catch {}
+    } catch (err) { console.error('[user-edit-modal]', err); window.panelToast?.error('İşlem başarısız: ' + (err?.body?.message || err?.message || 'bilinmiyor')); }
   });
 
   // Delete 2-step
@@ -96,6 +120,6 @@
       window.panelToast?.success('Silindi');
       window.closeUserEditModal();
       if (typeof window.reloadUsersTable === 'function') window.reloadUsersTable();
-    } catch {}
+    } catch (err) { console.error('[user-edit-modal]', err); window.panelToast?.error('İşlem başarısız: ' + (err?.body?.message || err?.message || 'bilinmiyor')); }
   });
 })();
