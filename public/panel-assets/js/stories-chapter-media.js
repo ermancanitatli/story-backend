@@ -275,12 +275,12 @@
         const dragHandle = `<span class="media-drag absolute top-1.5 left-10 size-6 rounded-md bg-black/60 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition z-10 cursor-grab" title="Sürükle sıralamak için">⋮⋮</span>`;
         const inner = isVid
           ? `
-              <video src="${url}#t=0.5" ${thumb ? `poster="${thumb}"` : ''} style="max-height:600px;width:auto;max-width:100%;" class="object-contain bg-black block" preload="metadata" muted playsinline></video>
+              <video src="${url}#t=0.5" ${thumb ? `poster="${thumb}"` : ''} style="max-height:300px;width:auto;max-width:100%;" class="object-contain bg-black block" preload="metadata" muted playsinline></video>
               <span class="absolute inset-0 flex items-center justify-center bg-black/25 group-hover:bg-black/10 transition pointer-events-none">
                 <i class="ki-filled ki-play text-white text-3xl drop-shadow-lg"></i>
               </span>
             `
-          : `<img src="${thumb || url}" alt="${esc(m.alt || '')}" style="max-height:600px;width:auto;max-width:100%;" class="object-contain block" loading="lazy"/>`;
+          : `<img src="${thumb || url}" alt="${esc(m.alt || '')}" style="max-height:300px;width:auto;max-width:100%;" class="object-contain block" loading="lazy"/>`;
 
         const hideIcon = hidden ? 'ki-eye' : 'ki-eye-slash';
         const hideTitle = hidden ? 'Görünür yap' : 'Gizle';
@@ -314,12 +314,15 @@
         if (card?.dataset.itemId) openLightbox(card.dataset.itemId);
       });
     });
-    galleryGrid.querySelectorAll('.media-card').forEach((el) => {
-      el.addEventListener('dblclick', (e) => {
+    // Çift tık — event delegation (video üzerinde de çalışsın)
+    if (!galleryGrid.__dblClickBound) {
+      galleryGrid.addEventListener('dblclick', (e) => {
         if (e.target.closest('button')) return;
-        openLightbox(el.dataset.itemId);
+        const card = e.target.closest('.media-card');
+        if (card?.dataset.itemId) openLightbox(card.dataset.itemId);
       });
-    });
+      galleryGrid.__dblClickBound = true;
+    }
 
     // gizle / görünür yap toggle
     galleryGrid.querySelectorAll('.media-toggle-hidden').forEach((btn) => {
