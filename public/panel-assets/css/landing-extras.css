@@ -1,0 +1,147 @@
+/*
+ * landing-extras.css
+ * -----------------------------------------------------------------------------
+ * Source: metronic-948/metronic-tailwind-nextjs-landings/saas/styles/globals.css
+ *
+ * Bu dosya panel base stylesheet'i (panel-assets/css/styles.css — precompiled
+ * Metronic KTUI build) ile DAHIL DEGILDIR. Landing / marketing sayfasi icin
+ * ileride gerekli oldugunda manuel include edilebilir:
+ *
+ *   <link rel="stylesheet" href="/panel-assets/css/landing-extras.css">
+ *
+ * Icerik: Tailwind v4 inline theme (oklch tabanli design token'lar) + landing
+ * sayfalarinin kullandigi custom keyframe'ler (marquee, aurora, rainbow,
+ * border-beam, caret-blink). KTUI base styles.css ile cakisabilir -- bu yuzden
+ * production'da cagirmadan once :where() / CSS layer ile kapsulleyin.
+ * -----------------------------------------------------------------------------
+ */
+
+/* Tailwind v4 varsa include edilir; v3 icinde bu at-rule'lar ignore edilecektir. */
+/* @import "tailwindcss"; */
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(92% 0.004 286.32);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  --color-1: oklch(66.2% 0.225 25.9);
+  --color-2: oklch(60.4% 0.26 302);
+  --color-3: oklch(69.6% 0.165 251);
+  --color-4: oklch(80.2% 0.134 225);
+  --color-5: oklch(90.7% 0.231 133);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* ----------------------------------------------------------------------------
+ * Landing-specific keyframes (KTUI base'de mevcut degil)
+ * ---------------------------------------------------------------------------- */
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(calc(-100% - var(--gap, 1rem))); }
+}
+
+@keyframes marquee-vertical {
+  from { transform: translateY(0); }
+  to   { transform: translateY(calc(-100% - var(--gap, 1rem))); }
+}
+
+@keyframes rainbow {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes aurora {
+  0%   { background-position: 0% 50%;   transform: rotate(-5deg) scale(0.9); }
+  25%  { background-position: 50% 100%; transform: rotate(5deg)  scale(1.1); }
+  50%  { background-position: 100% 50%; transform: rotate(-3deg) scale(0.95); }
+  75%  { background-position: 50% 0%;   transform: rotate(3deg)  scale(1.05); }
+  100% { background-position: 0% 50%;   transform: rotate(-5deg) scale(0.9); }
+}
+
+@keyframes caret-blink {
+  0%, 70%, 100% { opacity: 1; }
+  20%, 50%      { opacity: 0; }
+}
+
+@keyframes border-beam {
+  100% { offset-distance: 100%; }
+}
+
+@keyframes border-move {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Yardimci utility classlar (Tailwind olmadan da kullanilabilsin diye) */
+.landing-marquee            { animation: marquee var(--duration, 40s) infinite linear; }
+.landing-marquee-vertical   { animation: marquee-vertical var(--duration, 40s) linear infinite; }
+.landing-rainbow            { animation: rainbow var(--duration, 8s) infinite linear; }
+.landing-aurora             { animation: aurora var(--duration, 20s) infinite linear; }
+.landing-caret-blink        { animation: caret-blink 1.25s ease-out infinite; }
+
+html { scroll-behavior: smooth; }
