@@ -261,8 +261,11 @@
       .map((m) => {
         const isVid = isVideoItem(m);
         const hidden = m.hidden === true;
-        const thumb = esc(m.thumbnail || '');
+        const thumbRaw = m.thumbnail || '';
         const url = esc(m.url || '');
+        // Legacy veri'de thumbnail bazen .mp4 URL'inin aynısı — img olarak render edilemez.
+        const thumbIsImage = thumbRaw && /\.(jpe?g|png|webp|gif|avif)(\?|$)/i.test(thumbRaw.split('?')[0]);
+        const thumb = thumbIsImage ? esc(thumbRaw) : '';
         const hiddenBadge = hidden
           ? '<span class="absolute top-1.5 left-1.5 kt-badge kt-badge-xs kt-badge-warning z-10">Gizli</span>'
           : '';
@@ -273,9 +276,9 @@
           ? `
               ${thumb
                 ? `<img src="${thumb}" alt="" class="w-full h-full object-cover" loading="lazy"/>`
-                : `<video src="${url}" class="w-full h-full object-cover" preload="metadata" muted playsinline></video>`
+                : `<video src="${url}#t=0.5" class="w-full h-full object-cover" preload="metadata" muted playsinline></video>`
               }
-              <span class="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/40 transition">
+              <span class="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/40 transition pointer-events-none">
                 <i class="ki-filled ki-play text-white text-3xl drop-shadow-lg"></i>
               </span>
             `
