@@ -27,7 +27,62 @@
     <!-- Tab panels -->
     <div class="p-6">
       <div class="tab-panel" data-tab="basic">
-        <p class="text-sm text-muted-foreground">Temel bilgiler alanı (STORY-11 tarafından implement edilecek).</p>
+        <div class="flex flex-col gap-5">
+          <div>
+            <label class="kt-form-label">Dil</label>
+            <select id="locale-select" class="kt-input max-w-xs">
+              <% ['en','tr','ar','de','es','fr','it','ja','ko','pt','ru','zh'].forEach(l => { %>
+                <option value="<%= l %>"><%= l.toUpperCase() %></option>
+              <% }); %>
+            </select>
+          </div>
+
+          <div id="locale-badges" class="flex flex-wrap gap-2"></div>
+
+          <div class="flex flex-col gap-1">
+            <label class="kt-form-label">Başlık (<span class="locale-label">EN</span>)</label>
+            <input id="f-title" class="kt-input" placeholder="Hikaye başlığı"/>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="kt-form-label">Özet (<span class="locale-label">EN</span>)</label>
+            <textarea id="f-summary" class="kt-input" rows="3" placeholder="Kısa özet"></textarea>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="kt-form-label">Çocuk Dostu Özet (<span class="locale-label">EN</span>)</label>
+            <textarea id="f-summary-safe" class="kt-input" rows="3" placeholder="Aile dostu versiyon"></textarea>
+          </div>
+
+          <hr/>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="kt-form-label">Tür</label>
+              <input id="f-genre" class="kt-input"/>
+            </div>
+            <div>
+              <label class="kt-form-label">Zorluk</label>
+              <select id="f-difficulty" class="kt-input">
+                <option value="">—</option>
+                <option value="easy">Kolay</option>
+                <option value="medium">Orta</option>
+                <option value="hard">Zor</option>
+              </select>
+            </div>
+            <div>
+              <label class="kt-form-label">Yaş</label>
+              <input id="f-age" class="kt-input"/>
+            </div>
+            <div>
+              <label class="kt-form-label">Kredi Maliyeti</label>
+              <input id="f-credit-cost" type="number" min="0" class="kt-input"/>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-4">
+            <label class="flex items-center gap-2"><input id="f-is-paid" type="checkbox" class="kt-checkbox"/> Ücretli</label>
+            <label class="flex items-center gap-2"><input id="f-is-published" type="checkbox" class="kt-checkbox"/> Yayınla</label>
+          </div>
+        </div>
       </div>
       <div class="tab-panel hidden" data-tab="content">
         <div class="flex items-center justify-between mb-3">
