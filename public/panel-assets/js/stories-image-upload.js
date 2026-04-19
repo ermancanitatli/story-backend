@@ -107,7 +107,7 @@
     const items = window.__story.galleryImages || [];
     galleryGrid.innerHTML = items.map((img, i) => `
       <div class="gallery-item relative border border-border rounded overflow-hidden" draggable="true" data-index="${i}">
-        <img src="${img.thumbnail || img.url}" class="w-full h-32 object-cover"/>
+        <img src="${img.thumbnail || img.url}" class="w-full aspect-square object-cover"/>
         <input type="text" class="kt-input text-xs rounded-none border-x-0 border-b-0" placeholder="alt" value="${(img.alt || '').replace(/"/g,'&quot;')}" data-alt-index="${i}"/>
         <button type="button" class="absolute top-1 right-1 size-6 rounded-full bg-destructive text-white text-xs gallery-del" data-index="${i}">×</button>
       </div>
