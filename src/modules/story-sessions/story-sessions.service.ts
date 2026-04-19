@@ -311,13 +311,17 @@ export class StorySessionsService {
         transitionDirective.location ||
         transitionDirective.mood ||
         transitionDirective.carryOver);
+    // transitionMode: 'entering' ise chapter boundary'sindeyiz. Directive varsa
+    // prompt'ta explicit director talimatı olur; yoksa sadece bridge summary + yeni chapter metadata.
     const transitionMode: 'none' | 'entering' =
-      willTransition && hasDirective ? 'entering' : 'none';
+      willTransition ? 'entering' : 'none';
 
-    // === BRIDGE SUMMARY (transition modda raw history yerine bu kullanılır) ===
+    // === BRIDGE SUMMARY (her chapter transition'da üretilir, directive opsiyonel) ===
+    // Directive olmasa bile bridge oluşturmalıyız ki yeni chapter AI'ı önceki chapter'ı
+    // özetli biçimde görsün. Chapter 1'i bitirdik, key=currentChapter (ör: 1).
     let previousChapterBridge: string | undefined;
-    if (transitionMode === 'entering') {
-      const chapterKey = String(session.currentChapter); // tamamlanmakta olan chapter
+    if (willTransition) {
+      const chapterKey = String(session.currentChapter);
       const cached = (session as any).bridgeSummaries?.[chapterKey];
       if (cached) {
         previousChapterBridge = cached;
