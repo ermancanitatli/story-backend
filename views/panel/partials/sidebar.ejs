@@ -4,8 +4,15 @@
   const isStories = typeof currentPath === 'string' && currentPath.startsWith('/panel/stories');
   const isNotifications = typeof currentPath === 'string' && currentPath.startsWith('/panel/notifications');
   const isSettings = typeof currentPath === 'string' && currentPath.startsWith('/panel/settings');
+  const isAudit = typeof currentPath === 'string' && currentPath.startsWith('/panel/audit');
 %>
-<div class="kt-sidebar kt-sidebar-fixed kt-sidebar-collapse-auto bg-background border-e border-e-border fixed top-0 bottom-0 z-20 hidden lg:flex flex-col items-stretch shrink-0 [--kt-drawer-enable:true] lg:[--kt-drawer-enable:false]" id="sidebar" data-kt-drawer="true" data-kt-drawer-class="kt-drawer kt-drawer-start top-0 bottom-0" data-kt-drawer-enable="true|lg:false">
+<div
+  class="kt-sidebar hidden lg:flex flex-col shrink-0 w-[280px] border-e border-border bg-background"
+  id="sidebar"
+  data-kt-drawer="true"
+  data-kt-drawer-class="kt-drawer kt-drawer-start top-0 bottom-0 flex"
+  data-kt-drawer-enable="true|lg:false"
+>
   <div class="kt-sidebar-header hidden lg:flex items-center relative justify-between px-3 lg:px-6 shrink-0" id="sidebar_header">
     <a href="/panel" class="flex items-center gap-2">
       <img src="/panel-assets/media/app/default-logo.svg" class="h-[28px] dark:hidden" alt="Story Admin" />
@@ -46,6 +53,12 @@
         <a class="kt-menu-link" href="/panel/settings">
           <span class="kt-menu-icon"><i class="ki-filled ki-setting-2"></i></span>
           <span class="kt-menu-title">Ayarlar</span>
+        </a>
+      </div>
+      <div class="kt-menu-item <%= isAudit ? 'kt-menu-item-active' : '' %>">
+        <a class="kt-menu-link" href="/panel/audit">
+          <span class="kt-menu-icon"><i class="ki-filled ki-shield-tick"></i></span>
+          <span class="kt-menu-title">Audit Log</span>
         </a>
       </div>
     </div>
