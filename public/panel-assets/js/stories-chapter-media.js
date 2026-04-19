@@ -544,6 +544,16 @@
 
   // ===== LIGHTBOX MODAL =====
   const modal = document.getElementById('media-modal');
+  // Modal'ı body'e taşı — transform'lu parent'lar position:fixed'i bozar
+  if (modal && modal.parentElement !== document.body) {
+    document.body.appendChild(modal);
+  }
+  // Inline style ile kesin fixed konumlama (CSS purge güvenli)
+  if (modal) {
+    modal.style.position = 'fixed';
+    modal.style.inset = '0';
+    modal.style.zIndex = '9999';
+  }
   const modalPreview = document.getElementById('media-modal-preview');
   const modalUrl = document.getElementById('media-modal-url');
   const modalTitleInput = document.getElementById('media-modal-title-input');
