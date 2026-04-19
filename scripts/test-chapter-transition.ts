@@ -95,7 +95,7 @@ interface StepRow {
 
 function formatRow(r: StepRow): string {
   const sug =
-    r.suggest === true ? 'YES' : r.suggest === false ? 'no' : '-';
+    r.suggest === true ? 'YES' : r.suggest === false ? 'no ' : '???';
   const tr = r.isTransition ? '✨ TR' : '  ';
   const end = r.isEnding ? '🏁' : ' ';
   const stype = r.sceneType === 'chapter_transition' ? 'T' : ' ';
@@ -181,18 +181,37 @@ async function main() {
     }
     const pickIdx = Math.floor(rand() * choices.length);
     const pick = choices[pickIdx];
+
+    // choiceText bazen bilingual response'ta object olabilir veya boş gelebilir — normalize et
+    const choiceText =
+      typeof pick.text === 'string' && pick.text.trim().length > 0
+        ? pick.text.trim()
+        : typeof pick.text === 'object' && pick.text
+          ? Object.values(pick.text).find(
+              (v) => typeof v === 'string' && (v as string).trim().length > 0,
+            ) as string
+          : null;
+
+    if (!choiceText) {
+      console.error(
+        `[step ${step}] choice.text boş/geçersiz — payload:`,
+        JSON.stringify(pick).substring(0, 200),
+      );
+      break;
+    }
+
     try {
       lastProgress = await call(
         'POST',
         `/api/story-sessions/${sessionId}/choice`,
         {
-          choiceId: pick.id,
-          choiceText: pick.text,
-          choiceType: pick.type,
+          choiceId: String(pick.id || pickIdx + 1),
+          choiceText,
+          choiceType: pick.type || 'action',
         },
         headers,
       );
-      pushRow(lastProgress, step, pick.text);
+      pushRow(lastProgress, step, choiceText);
     } catch (err) {
       console.error(`[step ${step}] failed:`, (err as Error).message);
       break;
