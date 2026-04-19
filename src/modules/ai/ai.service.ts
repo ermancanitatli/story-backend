@@ -46,12 +46,18 @@ export class AiService {
     systemPrompt: string;
     userMessage: string;
     maxRetries?: number;
+    baseMaxTokens?: number; // default 4000. Dual perspective / bilingual için 6000-8000 öner
   }): Promise<GrokResponse> {
-    const { systemPrompt, userMessage, maxRetries = 3 } = params;
+    const {
+      systemPrompt,
+      userMessage,
+      maxRetries = 3,
+      baseMaxTokens = 4000,
+    } = params;
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const maxTokens = 4000 + attempt * 2000;
+      const maxTokens = baseMaxTokens + attempt * 2000;
 
       try {
         const response = await fetch(this.apiUrl, {
@@ -94,10 +100,21 @@ export class AiService {
 
         // Validate required fields
         const hasSingleLang = parsed.currentScene && Array.isArray(parsed.choices);
-        const hasBilingual = parsed.scenes && typeof parsed.scenes === 'object'
-          && (parsed.localizedChoices && typeof parsed.localizedChoices === 'object');
-        if (!hasSingleLang && !hasBilingual) {
-          throw new Error('Invalid Grok response format: missing currentScene/choices or scenes/localizedChoices');
+        const hasBilingual =
+          parsed.scenes &&
+          typeof parsed.scenes === 'object' &&
+          parsed.localizedChoices &&
+          typeof parsed.localizedChoices === 'object';
+        // Same-language dual perspective: scenes.host + scenes.guest + choices array
+        const hasDualPerspective =
+          parsed.scenes &&
+          typeof parsed.scenes === 'object' &&
+          ((parsed.scenes as any).host || (parsed.scenes as any).guest) &&
+          Array.isArray(parsed.choices);
+        if (!hasSingleLang && !hasBilingual && !hasDualPerspective) {
+          throw new Error(
+            'Invalid Grok response format: missing currentScene/choices or scenes/localizedChoices',
+          );
         }
 
         this.logger.log(`Grok API success (attempt ${attempt + 1}, tokens: ${maxTokens})`);

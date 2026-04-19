@@ -131,7 +131,13 @@ export class MultiplayerService {
     });
     const userMessage = buildUserMessage({ type: 'start', userChoice: '', recentHistory: [] });
 
-    const grokResponse = await this.aiService.callGrokAPI({ systemPrompt, userMessage });
+    // Multiplayer dual perspective — iki sahne + 4 choice JSON'ı üretiliyor,
+    // token ihtiyacı tek-sahneden ~2x. Base'i yüksek tut ki parse fail olmasın.
+    const grokResponse = await this.aiService.callGrokAPI({
+      systemPrompt,
+      userMessage,
+      baseMaxTokens: 8000,
+    });
 
     // Çift dilli response normalize et
     let sceneText: string;
@@ -353,7 +359,12 @@ export class MultiplayerService {
       chapterBridges: tierChapterBridges,
     });
 
-    let grokResponse = await this.aiService.callGrokAPI({ systemPrompt, userMessage });
+    // Multiplayer dual perspective — yüksek token ihtiyacı
+    let grokResponse = await this.aiService.callGrokAPI({
+      systemPrompt,
+      userMessage,
+      baseMaxTokens: 8000,
+    });
 
     // Bilingual'da tek dilde eksik choice varsa diğer dildeki aynı index'li choice ile doldur
     // (AI retry'ından önce bu basit patching — çoğu zaman bir dil başarılı oluyor).
@@ -391,7 +402,11 @@ export class MultiplayerService {
         `CRITICAL: EXACTLY 4 choices required. Each must have non-empty "text" and valid "type".${bilingualExample}\n` +
         `Regenerate full JSON now.`;
       try {
-        grokResponse = await this.aiService.callGrokAPI({ systemPrompt, userMessage: retryMsg });
+        grokResponse = await this.aiService.callGrokAPI({
+          systemPrompt,
+          userMessage: retryMsg,
+          baseMaxTokens: 8000,
+        });
         choiceRetry++;
       } catch (err) {
         this.logger.warn(`[choice-validate][multi] retry err: ${(err as Error).message}`);
