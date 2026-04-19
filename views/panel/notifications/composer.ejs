@@ -2,57 +2,75 @@
 <div class="grid lg:grid-cols-2 gap-6">
   <!-- SOL: Form -->
   <div class="kt-card">
-    <div class="kt-card-content p-6 flex flex-col gap-4">
-      <h3 class="text-lg font-semibold">Bildirim Oluştur</h3>
+    <div class="kt-card-content p-6">
+      <h3 class="text-lg font-semibold mb-5">Bildirim Oluştur</h3>
 
-      <!-- Dil sekmeleri -->
-      <div>
-        <div class="flex gap-1 mb-2 border-b border-border">
-          <% locales.forEach((l, i) => { %>
-            <button type="button" class="locale-tab px-3 py-1.5 text-sm <%= i===0 ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground' %>" data-locale="<%= l %>"><%= l %></button>
-          <% }); %>
+      <div class="grid gap-5">
+        <!-- Dil sekmeleri -->
+        <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+          <label class="kt-form-label flex items-center gap-1 max-w-56">Dil</label>
+          <div class="flex-1 min-w-0">
+            <div class="flex gap-1 mb-3 border-b border-border">
+              <% locales.forEach((l, i) => { %>
+                <button type="button" class="locale-tab px-3 py-1.5 text-sm <%= i===0 ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground' %>" data-locale="<%= l %>"><%= l %></button>
+              <% }); %>
+            </div>
+          </div>
         </div>
+
         <% locales.forEach((l, i) => { %>
-          <div class="locale-panel <%= i===0 ? '' : 'hidden' %>" data-locale="<%= l %>">
-            <label class="kt-form-label text-sm">Başlık (<%= l %>)</label>
-            <input type="text" class="kt-input mb-2" data-heading="<%= l %>" placeholder="Bildirim başlığı"/>
-            <label class="kt-form-label text-sm">İçerik (<%= l %>)</label>
-            <textarea class="kt-input" rows="3" data-content="<%= l %>" placeholder="Bildirim metni"></textarea>
+          <div class="locale-panel <%= i===0 ? '' : 'hidden' %> grid gap-5" data-locale="<%= l %>">
+            <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+              <label class="kt-form-label flex items-center gap-1 max-w-56">Başlık (<%= l %>)</label>
+              <input type="text" class="kt-input" data-heading="<%= l %>" placeholder="Bildirim başlığı"/>
+            </div>
+            <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+              <label class="kt-form-label flex items-center gap-1 max-w-56">İçerik (<%= l %>)</label>
+              <textarea class="kt-input" rows="3" data-content="<%= l %>" placeholder="Bildirim metni"></textarea>
+            </div>
           </div>
         <% }); %>
-      </div>
 
-      <div class="flex flex-col gap-1">
-        <label class="kt-form-label text-sm">Deep link URL (opsiyonel)</label>
-        <input type="url" id="url-input" class="kt-input" placeholder="https://..."/>
-      </div>
-      <div class="flex flex-col gap-1">
-        <label class="kt-form-label text-sm">Görsel URL (big_picture, opsiyonel)</label>
-        <input type="url" id="image-input" class="kt-input" placeholder="https://..."/>
-      </div>
+        <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+          <label class="kt-form-label flex items-center gap-1 max-w-56">Deep link URL</label>
+          <input type="url" id="url-input" class="kt-input" placeholder="https://..."/>
+        </div>
 
-      <div class="flex flex-col gap-1">
-        <label class="kt-form-label text-sm">Segment</label>
-        <select id="segment-select" class="kt-input">
-          <option value="non_premium" selected>Premium olmayan</option>
-          <option value="all">Tüm kullanıcılar</option>
-          <option value="premium">Premium</option>
-          <option value="active_7d">Son 7 gün aktif</option>
-          <option value="inactive_30d">30 gündür pasif</option>
-          <option value="custom_user_ids">Özel kullanıcı ID'leri</option>
-        </select>
-      </div>
-      <div id="custom-ids-wrapper" class="hidden flex flex-col gap-1">
-        <label class="kt-form-label text-sm">User ID'leri (csv veya satır)</label>
-        <textarea id="custom-ids" rows="4" class="kt-input" placeholder="id1, id2, id3 veya her satıra bir id"></textarea>
-      </div>
+        <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+          <label class="kt-form-label flex items-center gap-1 max-w-56">Görsel URL</label>
+          <input type="url" id="image-input" class="kt-input" placeholder="https://... (big_picture)"/>
+        </div>
 
-      <div class="flex items-center gap-3 p-3 rounded-md bg-muted/30 text-sm">
-        <i class="ki-filled ki-information-2 text-primary"></i>
-        <span>Tahmini alıcı: <strong id="estimate-count"><%= typeof initialEstimate !== 'undefined' && initialEstimate !== null ? initialEstimate : '—' %></strong></span>
-      </div>
+        <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+          <label class="kt-form-label flex items-center gap-1 max-w-56">Segment</label>
+          <select id="segment-select" class="kt-input">
+            <option value="non_premium" selected>Premium olmayan</option>
+            <option value="all">Tüm kullanıcılar</option>
+            <option value="premium">Premium</option>
+            <option value="active_7d">Son 7 gün aktif</option>
+            <option value="inactive_30d">30 gündür pasif</option>
+            <option value="custom_user_ids">Özel kullanıcı ID'leri</option>
+          </select>
+        </div>
 
-      <button id="send-btn" class="kt-btn kt-btn-primary">Gönder</button>
+        <div id="custom-ids-wrapper" class="hidden flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+          <label class="kt-form-label flex items-center gap-1 max-w-56">User ID'leri</label>
+          <textarea id="custom-ids" rows="4" class="kt-input" placeholder="id1, id2, id3 veya her satıra bir id"></textarea>
+        </div>
+
+        <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+          <label class="kt-form-label flex items-center gap-1 max-w-56">Tahmini alıcı</label>
+          <div class="flex items-center gap-3 p-3 rounded-md bg-muted/30 text-sm flex-1">
+            <i class="ki-filled ki-information-2 text-primary"></i>
+            <span><strong id="estimate-count"><%= typeof initialEstimate !== 'undefined' && initialEstimate !== null ? initialEstimate : '—' %></strong></span>
+          </div>
+        </div>
+
+        <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+          <label class="kt-form-label flex items-center gap-1 max-w-56"></label>
+          <button id="send-btn" class="kt-btn kt-btn-primary">Gönder</button>
+        </div>
+      </div>
     </div>
   </div>
 
