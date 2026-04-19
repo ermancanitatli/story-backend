@@ -453,6 +453,20 @@ export class StorySessionsService {
 
     // (Eski skippedGrok logu kaldırıldı — artık tüm path'ler AI üretiyor.)
 
+    // Effects alanını normalize et — AI 'suggestChapterTransition' field'ini atlayabilir,
+    // biz her zaman boolean tutalım ki test script ve monitoring 'dash' yerine false/true görsün.
+    const normalizedEffects: any = { ...(grokResponse.effects || {}) };
+    if (typeof normalizedEffects.suggestChapterTransition !== 'boolean') {
+      normalizedEffects.suggestChapterTransition = false;
+    }
+
+    // AI suggest vs force log'u
+    if (pacingHint === 'soft' || pacingHint === 'pressure') {
+      this.logger.log(
+        `[pacing] hint=${pacingHint} AI.suggest=${normalizedEffects.suggestChapterTransition} ch.step=${newChapterStep}`,
+      );
+    }
+
     // Progress kaydet
     const progress = await this.progressModel.create({
       sessionId: session._id,
@@ -462,7 +476,7 @@ export class StorySessionsService {
       choices: grokResponse.choices,
       currentChapter: newChapter,
       chapterStepCount: isChapterTransition ? 0 : newChapterStep,
-      effects: grokResponse.effects,
+      effects: normalizedEffects,
       emotionalStates: emotionalChanges,
       isChapterTransition,
       isEnding: grokResponse.isEnding || false,

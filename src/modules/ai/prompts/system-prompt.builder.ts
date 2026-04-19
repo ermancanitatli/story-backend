@@ -202,32 +202,65 @@ ${
 4. Include emotional changes (-5 to +5) in effects
 5. Track items gained/lost
 6. Use isEnding=true only when the story reaches a natural conclusion
-7. endingType: victory, defeat, neutral, or cliffhanger`;
+7. endingType: victory, defeat, neutral, or cliffhanger
+8. MANDATORY FIELD: effects.suggestChapterTransition MUST be a boolean (true or false). NEVER omit this field. NEVER leave it null. Default false unless pacing instructions below say otherwise.`;
 
   // === CHAPTER PACING INSTRUCTIONS ===
   if (params.isLastChapter) {
     prompt += `
 
-## Pacing — Final Chapter (No Transition):
-This is the STORY's FINAL chapter (${params.currentChapter}/${params.totalChapters}).
+## Pacing — FINAL CHAPTER (Story End):
+This is the STORY's FINAL chapter (${params.currentChapter}/${params.totalChapters}). There is NO next chapter.
 - Do NOT force a chapter transition.
 - Let the story breathe. When a natural narrative conclusion emerges, set isEnding=true.
-- Set effects.suggestChapterTransition=false (no next chapter exists).`;
+- MANDATORY: effects.suggestChapterTransition = false (no next chapter exists, setting true is an error).`;
   } else if (params.pacingHint === 'soft') {
     prompt += `
 
-## Pacing — Chapter Closing Window (Soft):
-The current chapter has reached its natural closing window. Evaluate: does this scene feel like a fitting chapter ending (resolved emotional beat, quiet moment, decision point)?
-- If YES: set effects.suggestChapterTransition=true. Write a scene that gently closes this chapter's arc. The NEXT scene will start the next chapter automatically.
-- If NO: continue naturally; set effects.suggestChapterTransition=false.`;
+## 🎬 CHAPTER CLOSING DECISION (Soft Window)
+This chapter has reached its natural closing window (reached minimum steps for a full chapter arc).
+
+YOU MUST DECIDE NOW:
+Does this scene represent a fitting chapter end? A fitting end is:
+  • A resolved emotional beat (confession, realization, decision)
+  • A quiet reflective moment (pause, sigh, looking away)
+  • A decision point that naturally transitions to a new time/place
+  • A cliffhanger that begs a skip forward
+
+→ If YES, the current scene IS the chapter's closing beat:
+    • Write currentScene as a gentle closing moment (no new subplot, no unresolved hook dragging on)
+    • MANDATORY: effects.suggestChapterTransition = true
+    • The NEXT scene (not this one) will begin the next chapter automatically
+
+→ If NO, continue the current arc:
+    • MANDATORY: effects.suggestChapterTransition = false
+    • Continue pacing naturally, but keep in mind the chapter should close soon
+
+CRITICAL: effects.suggestChapterTransition MUST be a boolean (true or false). Silence / null / omission is an error and the response will be rejected.`;
   } else if (params.pacingHint === 'pressure') {
     prompt += `
 
-## Pacing — Chapter Closing Pressure:
-This chapter has run longer than ideal. Steer the narrative toward a closing beat.
-- Create a natural wind-down: complete the current emotional thread, introduce a pause, hint at an upcoming shift.
-- Strongly consider setting effects.suggestChapterTransition=true if the scene allows a graceful exit.
-- Avoid introducing major new subplots — focus on resolving what's open.`;
+## 🚨 CHAPTER CLOSING PRESSURE (Must Wrap Up)
+This chapter has run LONGER than ideal and MUST close soon. The story is being dragged.
+
+Your task for THIS scene:
+  • Create a clear wind-down beat: complete the current emotional thread, introduce a pause, or hint at a scene shift
+  • Do NOT introduce new subplots, new characters, or new open questions
+  • Focus on resolving what is already open
+
+Decision:
+→ STRONGLY PREFER: effects.suggestChapterTransition = true
+  (only write false if the scene truly cannot close — but explain in acknowledged_directive why)
+→ If you MUST continue: keep the scene SHORT (2-3 sentences) and make it clearly transitional.
+
+CRITICAL: effects.suggestChapterTransition MUST be a boolean. Silence / omission is a failure.`;
+  } else {
+    // pacingHint === 'none' — normal akış, yine de MANDATORY alan
+    prompt += `
+
+## Pacing — Normal Flow
+Not yet in the chapter closing window. Continue developing the current arc normally.
+MANDATORY: effects.suggestChapterTransition = false (not yet ready to close this chapter).`;
   }
 
   if (censor) {
@@ -286,7 +319,7 @@ Before composing currentScene, populate \`acknowledged_directive\` with ONE sent
     "itemsLost": [],
     "relationshipChanges": {},
     "emotionalChanges": {"intimacy":0,"anger":0,"worry":0,"trust":0,"excitement":0,"sadness":0},
-    "suggestChapterTransition": false
+    "suggestChapterTransition": false  // MANDATORY boolean — see Pacing section above
   },
   "isEnding": false,
   "endingType": null
@@ -310,7 +343,7 @@ Before composing currentScene, populate \`acknowledged_directive\` with ONE sent
     "itemsLost": [],
     "relationshipChanges": {},
     "emotionalChanges": {"intimacy":0,"anger":0,"worry":0,"trust":0,"excitement":0,"sadness":0},
-    "suggestChapterTransition": false
+    "suggestChapterTransition": false  // MANDATORY boolean — see Pacing section above
   },
   "isEnding": false,
   "endingType": null
