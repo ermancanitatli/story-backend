@@ -16,6 +16,10 @@ import { resolveSessionSecret } from './modules/panel/session-secret.helper';
 import { winstonConfig } from './common/logger/winston.config';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 import { ApiJsonExceptionFilter } from './common/filters/api-json-exception.filter';
+import {
+  createLoginRateLimiter,
+  createPanelNamespaceLimiter,
+} from './modules/panel/rate-limit.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -69,6 +73,18 @@ async function bootstrap() {
       },
     }),
   );
+
+  // Panel rate limiting (CC-04): Redis-backed, cluster-safe.
+  // /panel/login POST: 5 başarısız deneme / 15 dk / IP -> 429 HTML page.
+  // /panel namespace baseline: 100 req/min / IP.
+  const loginRateLimiter = createLoginRateLimiter(sessionRedis);
+  app.use('/panel/login', (req, res, next) => {
+    if (req.method === 'POST') {
+      return loginRateLimiter(req, res, next);
+    }
+    return next();
+  });
+  app.use('/panel', createPanelNamespaceLimiter(sessionRedis));
 
   // Socket.IO Redis Adapter (cluster-safe)
   const redisHost = configService.get<string>('REDIS_HOST', 'localhost');

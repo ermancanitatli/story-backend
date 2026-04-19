@@ -17,6 +17,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { PanelHtmlExceptionFilter } from '../../common/filters/panel-html-exception.filter';
 import { AdminUsersService } from './admin-users.service';
 import { AdminAuditLogService } from './admin-audit-log.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 type PanelSession = {
   adminId?: string;

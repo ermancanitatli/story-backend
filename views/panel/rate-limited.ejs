@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="tr"><head><meta charset="utf-8"><title>Çok Fazla Deneme</title>
+<link rel="stylesheet" href="/panel-assets/css/styles.css"/>
+<link rel="stylesheet" href="/panel-assets/vendors/keenicons/styles.bundle.css"/>
+</head><body class="antialiased flex items-center justify-center h-full bg-background">
+<div class="text-center max-w-md p-8">
+  <i class="ki-filled ki-shield-cross text-[96px] text-destructive mb-4"></i>
+  <h1 class="text-4xl font-bold mb-3">Çok Fazla Deneme</h1>
+  <p class="text-secondary-foreground mb-4">Lütfen biraz bekle ve tekrar dene.</p>
+  <% if (typeof retryAfter !== 'undefined' && retryAfter) { %>
+    <p class="text-sm">Tekrar deneme süresi: <%= retryAfter %> saniye</p>
+  <% } %>
+</div></body></html>
