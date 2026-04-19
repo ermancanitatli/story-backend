@@ -1,0 +1,48 @@
+<% layout('panel/layout') %>
+
+<div class="flex items-center justify-between mb-5">
+  <h1 class="text-2xl font-semibold"><%= isNew ? 'Yeni Hikaye' : 'Hikaye Düzenle' %></h1>
+  <div class="flex gap-2">
+    <button id="cancel-btn" class="kt-btn kt-btn-outline" onclick="history.back()">İptal</button>
+    <button id="draft-btn" class="kt-btn kt-btn-outline">Taslak Kaydet</button>
+    <button id="save-btn" class="kt-btn kt-btn-primary">Kaydet</button>
+  </div>
+</div>
+
+<div id="dirty-banner" class="hidden mb-4 px-4 py-2 rounded-md border border-warning/20 bg-warning/10 text-warning text-sm">
+  Kaydedilmemiş değişiklikler var.
+</div>
+
+<div class="kt-card">
+  <div class="kt-card-content p-0">
+    <!-- Tabs -->
+    <div class="flex border-b border-border" id="tabs">
+      <button class="tab px-4 py-3 text-sm font-medium border-b-2 border-primary text-primary" data-tab="basic">Temel Bilgiler</button>
+      <button class="tab px-4 py-3 text-sm font-medium text-muted-foreground" data-tab="content">İçerik</button>
+      <button class="tab px-4 py-3 text-sm font-medium text-muted-foreground" data-tab="characters">Karakterler</button>
+      <button class="tab px-4 py-3 text-sm font-medium text-muted-foreground" data-tab="images">Görseller</button>
+      <button class="tab px-4 py-3 text-sm font-medium text-muted-foreground" data-tab="settings">Ayarlar</button>
+    </div>
+
+    <!-- Tab panels -->
+    <div class="p-6">
+      <div class="tab-panel" data-tab="basic">
+        <p class="text-sm text-muted-foreground">Temel bilgiler alanı (STORY-11 tarafından implement edilecek).</p>
+      </div>
+      <div class="tab-panel hidden" data-tab="content">
+        <p class="text-sm text-muted-foreground">Chapters + scenes (STORY-12).</p>
+      </div>
+      <div class="tab-panel hidden" data-tab="characters">
+        <p class="text-sm text-muted-foreground">Karakter yönetimi (STORY-13).</p>
+      </div>
+      <div class="tab-panel hidden" data-tab="images">
+        <p class="text-sm text-muted-foreground">Cover + gallery (STORY-14/15).</p>
+      </div>
+      <div class="tab-panel hidden" data-tab="settings">
+        <p class="text-sm text-muted-foreground">Tags + SEO (STORY-16).</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/panel-assets/js/stories-edit.js"></script>
