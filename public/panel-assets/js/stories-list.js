@@ -1,6 +1,40 @@
 (function() {
-  let state = { search: '', genre: '', isPaid: '', isPublished: '', page: 1, limit: 25 };
+  // URL state sync
+  function stateToUrl(s) {
+    const params = new URLSearchParams();
+    if (s.search) params.set('q', s.search);
+    if (s.genre) params.set('genre', s.genre);
+    if (s.isPaid !== '') params.set('paid', s.isPaid);
+    if (s.isPublished !== '') params.set('pub', s.isPublished);
+    if (s.locale) params.set('locale', s.locale);
+    if (s.page > 1) params.set('page', s.page);
+    const qs = params.toString();
+    history.replaceState(null, '', qs ? '?' + qs : location.pathname);
+  }
+
+  function urlToState() {
+    const p = new URLSearchParams(location.search);
+    return {
+      search: p.get('q') || '',
+      genre: p.get('genre') || '',
+      isPaid: p.get('paid') || '',
+      isPublished: p.get('pub') || '',
+      locale: p.get('locale') || '',
+      page: parseInt(p.get('page') || '1', 10),
+      limit: 25,
+    };
+  }
+
+  let state = urlToState();
   let total = 0;
+
+  // Filter input'ları URL'den set et
+  document.getElementById('search-input').value = state.search;
+  document.getElementById('genre-filter').value = state.genre;
+  document.getElementById('paid-filter').value = state.isPaid;
+  document.getElementById('published-filter').value = state.isPublished;
+  const localeEl = document.getElementById('locale-filter');
+  if (localeEl) localeEl.value = state.locale;
 
   function fmt(d) { return d ? new Date(d).toLocaleDateString('tr-TR') : '—'; }
   function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -10,6 +44,7 @@
   }
 
   async function load() {
+    stateToUrl(state);
     const params = new URLSearchParams();
     if (state.search) params.set('search', state.search);
     if (state.genre) params.set('genre', state.genre);
@@ -28,8 +63,9 @@
         tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-muted-foreground">Hikaye bulunamadı</td></tr>';
         return;
       }
+      const loc = state.locale || 'en';
       tbody.innerHTML = stories.map(s => {
-        const title = s.translations?.en?.title || s.title || '—';
+        const title = s.translations?.[loc]?.title || s.translations?.en?.title || s.title || '—';
         const paid = s.isPaid ? '<span class="kt-badge kt-badge-warning">Ücretli</span>' : '<span class="kt-badge kt-badge-outline">Ücretsiz</span>';
         const pub = s.isPublished ? '<span class="kt-badge kt-badge-success">Yayın</span>' : '<span class="kt-badge kt-badge-secondary">Taslak</span>';
         return `<tr data-id="${s._id}">
@@ -67,9 +103,17 @@
       load();
     });
   });
+  if (localeEl) {
+    localeEl.addEventListener('change', e => {
+      state.locale = e.target.value;
+      load();
+    });
+  }
   document.getElementById('clear-filters').addEventListener('click', () => {
     ['search-input','genre-filter','paid-filter','published-filter'].forEach(id => document.getElementById(id).value = '');
-    state = { search: '', genre: '', isPaid: '', isPublished: '', page: 1, limit: 25 };
+    if (localeEl) localeEl.value = '';
+    state = { search: '', genre: '', isPaid: '', isPublished: '', locale: '', page: 1, limit: 25 };
+    history.replaceState(null, '', location.pathname);
     load();
   });
   document.getElementById('stories-prev').addEventListener('click', () => { if (state.page > 1) { state.page--; load(); } });
