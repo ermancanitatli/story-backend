@@ -292,16 +292,32 @@ Develop the story freely. MANDATORY: effects.suggestChapterTransition = false.`;
   }
 
   if (params.isMultiplayer) {
+    const activeName = params.activePlayerName || params.hostName || 'Host';
+    const otherName =
+      activeName === params.hostName ? params.guestName || 'Guest' : params.hostName || 'Host';
     prompt += `
 
-## Multiplayer Mode:
+## Multiplayer Mode — PERSPECTIVE RULES (CRITICAL):
 - Host (player 1): ${params.hostName || 'Host'}
 - Guest (player 2): ${params.guestName || 'Guest'}
-- Active player for this turn: ${params.activePlayerName || params.hostName || 'Host'}
+- **ACTIVE PLAYER (this turn's POV): ${activeName}**
 - Both host and guest are REAL players who REPLACE the original story characters.
   If the story has two main characters (e.g. Alex and Lila), assign the first to Host and the second to Guest.
-  From now on use "${params.hostName || 'Host'}" and "${params.guestName || 'Guest'}" — NEVER use the original story character names.
-- Write the scene from the active player's ("${params.activePlayerName || 'Host'}") perspective in second person ("you"), with the other player as a speaking/interacting character.`;
+  NEVER use the original story character names — only use "${params.hostName}" and "${params.guestName}".
+
+### Perspective for THIS scene:
+- The scene MUST be written from **${activeName}'s** point of view, in second person ("you" = ${activeName}).
+- ${otherName} is the OTHER character in the scene — describe their actions, dialogue, appearance from ${activeName}'s eyes.
+- Do NOT write "${activeName}" doing something in third person; "${activeName}" is "you".
+- Do NOT write the scene from ${otherName}'s eyes.
+
+Example (if active=${activeName}):
+  ✓ "${otherName} looks at you and smiles, '${activeName}, come closer.'"
+  ✓ "You feel ${otherName}'s hand on your shoulder."
+  ✗ "${activeName} looks at ${otherName}" (wrong — ${activeName} is you)
+  ✗ "${otherName}'s heart races as she watches ${activeName}" (wrong — we're in ${activeName}'s head)
+
+The 4 choices are ${activeName}'s possible actions/dialogues.`;
   }
 
   // === CHAIN-OF-THOUGHT: acknowledged_directive self-restate ===

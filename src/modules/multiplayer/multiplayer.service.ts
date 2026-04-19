@@ -320,7 +320,10 @@ export class MultiplayerService {
       isMultiplayer: true,
       hostName: session.hostName,
       guestName: session.guestName,
-      activePlayerName: session.nextPlayerId?.toString() === session.hostId?.toString() ? session.hostName : session.guestName,
+      // Sahne SUBMIT EDEN oyuncunun gözünden yazılmalı (onun seçimi sahneyi şekillendiriyor).
+      // userId = şu an choice submit eden aktif oyuncu.
+      activePlayerName:
+        userId === session.hostId?.toString() ? session.hostName : session.guestName,
       languages,
       rollingSummary: tierRollingSummary,
       chapterBridges: tierChapterBridges,
