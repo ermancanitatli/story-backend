@@ -16,6 +16,9 @@ export interface GrokResponse {
   };
   isEnding?: boolean;
   endingType?: string;
+  // Chapter transition guardrails
+  scene_type?: 'chapter_transition' | 'continuation';
+  acknowledged_directive?: string;
 }
 
 @Injectable()
@@ -108,5 +111,59 @@ export class AiService {
     }
 
     throw lastError || new Error('Grok API failed after all retries');
+  }
+
+  /**
+   * Chapter transition için "bridge summary" üretir — önceki chapter'ın son sahnelerini
+   * 1-2 cümleye sıkıştırır, AI recency bias'ını kırmak için ana promptta raw history
+   * yerine bu özet kullanılır. Tek seferlik çağrı, session.bridgeSummaries'e cache'lenir.
+   */
+  async summarizeForTransition(recentSceneText: string): Promise<string> {
+    if (!recentSceneText || recentSceneText.trim().length === 0) {
+      return '';
+    }
+
+    try {
+      const response = await fetch(this.apiUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are a story editor. Compress the given scenes into 1-2 sentences summarizing the key state at the end (location, emotional status, relationships). This summary will be used as "archived past events" — past tense, factual, no dialogue. Output plain text only, no JSON.',
+            },
+            {
+              role: 'user',
+              content: `Scenes to compress:\n${recentSceneText}`,
+            },
+          ],
+          temperature: 0.3,
+          max_tokens: 150,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        this.logger.warn(
+          `summarizeForTransition failed (${response.status}): ${errorText}`,
+        );
+        return '';
+      }
+
+      const data = await response.json();
+      const content: string = data.choices?.[0]?.message?.content?.trim() || '';
+      return content;
+    } catch (err) {
+      this.logger.warn(
+        `summarizeForTransition error: ${(err as Error).message}`,
+      );
+      return '';
+    }
   }
 }

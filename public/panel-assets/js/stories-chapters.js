@@ -54,15 +54,15 @@
           </div>
           <textarea class="kt-input chapter-summary mb-3" rows="2" placeholder="Bölüm özeti (AI'a bağlam olarak gider)">${esc(ch.summary || '')}</textarea>
 
-          <!-- Chapter transition açılış sahnesi — deterministik, AI üretmez -->
+          <!-- Chapter transition directive — AI'ı yönlendiren yapılandırılmış direktif -->
           <div class="mb-3 rounded-md border border-border p-3" style="background:rgba(59,130,246,0.04);">
             <div class="flex items-center gap-2 mb-2">
-              <span class="text-sm font-semibold">🎬 Açılış Sahnesi (Starting Scene)</span>
-              <span class="text-xs text-muted-foreground">— AI atlanır, bu metin doğrudan gösterilir</span>
+              <span class="text-sm font-semibold">🎬 Bölüm Geçiş Direktifi</span>
+              <span class="text-xs text-muted-foreground">— AI bu alanlara göre doğal açılış sahnesi üretir</span>
             </div>
-            <textarea class="kt-input chapter-starting-scene" rows="4" placeholder="Örn: 'Üç ay sonra evdesin, pencereden yağmur izlersin.' — Bu bölüme geçildiğinde oyuncuya gösterilecek deterministik açılış metni. Önceki bölümün sonuyla çelişse bile bu metin kullanılır (time jump / location change için ideal). Boş bırakılırsa AI kullanılır.">${esc(ch.startingScene || '')}</textarea>
-            <div class="flex items-center gap-2 mt-2">
-              <select class="kt-input chapter-starting-locale" style="max-width:120px;">
+            <div class="flex items-center gap-2 mb-3">
+              <label class="text-xs text-muted-foreground shrink-0">Dil:</label>
+              <select class="kt-input chapter-directive-locale" style="max-width:120px;">
                 <option value="en">EN</option>
                 <option value="tr">TR</option>
                 <option value="ar">AR</option>
@@ -76,8 +76,29 @@
                 <option value="ru">RU</option>
                 <option value="zh">ZH</option>
               </select>
-              <span class="text-xs text-muted-foreground">Yukarıdaki metin seçili dil için, EN dışındakiler otomatik çeviri olarak saklanır.</span>
+              <span class="text-xs text-muted-foreground">Seçili dil için direktif alanları</span>
             </div>
+            <div class="grid gap-2">
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium">⏱ Zaman geçişi</label>
+                <input class="kt-input chapter-directive-timeDelta" placeholder="Örn: 3 ay sonra / ertesi sabah / yıllar geçti"/>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium">📍 Konum</label>
+                <input class="kt-input chapter-directive-location" placeholder="Örn: Ev, oturma odası, akşam, pencereye vuran yağmur"/>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium">🎭 Ruh hali</label>
+                <input class="kt-input chapter-directive-mood" placeholder="Örn: Melankolik yansıma / heyecanlı bekleyiş"/>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium">🔗 Önceki bölümden taşınacaklar</label>
+                <input class="kt-input chapter-directive-carryOver" placeholder="Örn: Mira ile bağ — artık mesafeli, telefon numarası telefonda"/>
+              </div>
+            </div>
+            <p class="text-xs text-muted-foreground mt-2">
+              <strong>İpucu:</strong> Alanlar boş bırakılırsa AI yalnızca bölüm özetine bakarak yazar. Time jump / location change için alanları doldurmak önerilir.
+            </p>
           </div>
 
           <div class="flex items-center justify-between mb-2">
@@ -116,32 +137,46 @@
         persistChapters();
       });
 
-      // Starting scene — multi-locale
-      const startingScene = card.querySelector('.chapter-starting-scene');
-      const startingLocale = card.querySelector('.chapter-starting-locale');
-      function loadStartingSceneForLocale() {
-        const locale = startingLocale.value;
-        const ch = window.__story.chapters[ci];
-        const translations = ch.startingSceneTranslations || {};
-        // EN için flat startingScene fallback
-        if (locale === 'en') {
-          startingScene.value = translations.en || ch.startingScene || '';
-        } else {
-          startingScene.value = translations[locale] || '';
-        }
-      }
-      startingLocale.addEventListener('change', loadStartingSceneForLocale);
-      startingScene.addEventListener('input', e => {
-        const locale = startingLocale.value;
-        const ch = window.__story.chapters[ci];
-        if (!ch.startingSceneTranslations) ch.startingSceneTranslations = {};
-        ch.startingSceneTranslations[locale] = e.target.value;
-        // EN her zaman flat startingScene ile senkron kalsın (backend fallback için)
-        if (locale === 'en') {
-          ch.startingScene = e.target.value;
-        }
-        persistChapters();
+      // Chapter transition directive — multi-locale, 4 alan (timeDelta, location, mood, carryOver)
+      const dirLocale = card.querySelector('.chapter-directive-locale');
+      const dirFields = ['timeDelta', 'location', 'mood', 'carryOver'];
+      const dirInputs = {};
+      dirFields.forEach(k => {
+        dirInputs[k] = card.querySelector(`.chapter-directive-${k}`);
       });
+
+      function loadDirectiveForLocale() {
+        const locale = dirLocale.value;
+        const ch = window.__story.chapters[ci];
+        const translations = ch.transitionDirectiveTranslations || {};
+        const source = locale === 'en'
+          ? (translations.en || ch.transitionDirective || {})
+          : (translations[locale] || {});
+        dirFields.forEach(k => {
+          dirInputs[k].value = source[k] || '';
+        });
+      }
+
+      dirLocale.addEventListener('change', loadDirectiveForLocale);
+
+      dirFields.forEach(k => {
+        dirInputs[k].addEventListener('input', e => {
+          const locale = dirLocale.value;
+          const ch = window.__story.chapters[ci];
+          if (!ch.transitionDirectiveTranslations) ch.transitionDirectiveTranslations = {};
+          if (!ch.transitionDirectiveTranslations[locale]) ch.transitionDirectiveTranslations[locale] = {};
+          ch.transitionDirectiveTranslations[locale][k] = e.target.value;
+          // EN her zaman flat transitionDirective ile senkron (backend fallback)
+          if (locale === 'en') {
+            if (!ch.transitionDirective) ch.transitionDirective = {};
+            ch.transitionDirective[k] = e.target.value;
+          }
+          persistChapters();
+        });
+      });
+
+      // İlk render'da EN değerlerini yükle
+      loadDirectiveForLocale();
       card.querySelector('.chapter-remove').addEventListener('click', () => {
         if (!confirm('Bölüm silinsin mi?')) return;
         window.__story.chapters.splice(ci, 1);

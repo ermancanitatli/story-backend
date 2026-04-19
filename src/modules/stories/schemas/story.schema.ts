@@ -68,15 +68,28 @@ export class StoryChapter {
   @Prop()
   summary?: string;
 
-  // Chapter açılışında oyuncuya gösterilen deterministik sahne metni (AI değil).
-  // isChapterTransition olduğunda backend Grok'u skip eder ve bu metni kullanır.
-  // Writer/admin tarafından chapter boundary'de time/location jump kontrolü için yazılır.
-  @Prop()
-  startingScene?: string;
-
-  // Multi-locale starting scene — fallback zinciri: current locale → EN → flat startingScene
+  // Chapter transition directive (AI'ı yönlendiren yapılandırılmış direktif).
+  // Hardcoded metin değil — AI bu alanlara göre doğal açılış sahnesi üretir.
+  // timeDelta: "3 ay sonra" | location: "Ev, oturma odası" | mood: "melankolik" | carryOver: "Mira ile mesafeli bağ"
   @Prop({ type: Object })
-  startingSceneTranslations?: Record<string, string>;
+  transitionDirective?: {
+    timeDelta?: string;
+    location?: string;
+    mood?: string;
+    carryOver?: string;
+  };
+
+  // Multi-locale transition directive — fallback zinciri: current locale → EN → flat transitionDirective
+  @Prop({ type: Object })
+  transitionDirectiveTranslations?: Record<
+    string,
+    {
+      timeDelta?: string;
+      location?: string;
+      mood?: string;
+      carryOver?: string;
+    }
+  >;
 
   @Prop({ type: [StoryScene] })
   scenes?: StoryScene[];

@@ -64,6 +64,12 @@ export class StorySession extends Document {
 
   @Prop()
   languageCode?: string;
+
+  // Chapter geçişlerinde AI'a "önceki chapter'ın özeti" olarak enjekte edilen bridge.
+  // Key: chapter numarası (string), value: 1-2 cümlelik özet. Cache amaçlı — bir chapter
+  // için tek seferlik Grok çağrısıyla üretilir, sonraki transition adımlarında tekrar kullanılır.
+  @Prop({ type: Object, default: {} })
+  bridgeSummaries?: Record<string, string>;
 }
 
 export const StorySessionSchema = SchemaFactory.createForClass(StorySession);

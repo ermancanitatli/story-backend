@@ -212,118 +212,160 @@ export class StorySessionsService {
       .filter(Boolean);
 
     // === CHAPTER TRANSITION DETECTION (Grok çağrısından ÖNCE) ===
-    // Bu step chapter boundary'yi geçiyor mu?
+    // Bu step chapter boundary'yi geçiyor mu? (yeni chapter'a girişin ilk sahnesi)
     const newChapterStepPreview = session.chapterStepCount + 1;
     const willTransition =
       type !== 'start' && newChapterStepPreview >= STEPS_PER_CHAPTER;
-    const nextChapterIdx = willTransition
-      ? session.currentChapter // 0-indexed next chapter in array (currentChapter 1-based, array 0-based)
-      : -1;
-    const nextChapter =
+
+    // willTransition=true ise bir sonraki chapter'ın direktifini kullanıyoruz.
+    // Aksi halde mevcut chapter'ın direktifi.
+    const locale = params.languageCode || 'en';
+    const currentChapterIdx = session.currentChapter - 1; // 0-based
+    const currentChapterData: any =
+      clone?.chapters && currentChapterIdx >= 0 && currentChapterIdx < clone.chapters.length
+        ? clone.chapters[currentChapterIdx]
+        : null;
+    const nextChapterIdx = willTransition ? session.currentChapter : -1;
+    const nextChapterData: any =
       willTransition && clone?.chapters && nextChapterIdx < clone.chapters.length
         ? clone.chapters[nextChapterIdx]
         : null;
 
-    // Chapter transition + admin startingScene yazmışsa Grok'u atla
-    const locale = params.languageCode || 'en';
-    const nextChapterStartingScene = nextChapter
-      ? nextChapter.startingSceneTranslations?.[locale] ||
-        nextChapter.startingSceneTranslations?.['en'] ||
-        nextChapter.startingScene ||
-        null
-      : null;
+    // Hangi chapter'ın directive'ini kullanacağız? Transition varsa sonraki, yoksa mevcut.
+    const directiveChapter = willTransition ? nextChapterData : currentChapterData;
+    const transitionDirective = directiveChapter
+      ? directiveChapter.transitionDirectiveTranslations?.[locale] ||
+        directiveChapter.transitionDirectiveTranslations?.['en'] ||
+        directiveChapter.transitionDirective ||
+        undefined
+      : undefined;
 
-    // === Önceki chapter için one-shot transition block (chapter'a girdikten SONRAKİ ilk user choice'ta) ===
-    // session.chapterStepCount === 0 && currentChapter > 1 ise, bu adım yeni chapter'ın 2. sahnesi.
-    // Önceki chapter'ın gerçekte ne olduğunu Grok'a hatırlatmamız lazım.
-    const justEnteredNewChapter =
-      type === 'continue' && session.chapterStepCount === 0 && session.currentChapter > 1;
-    const currentChapterIdx = session.currentChapter - 1; // 0-based
-    const currentChapterData =
-      clone?.chapters && currentChapterIdx >= 0 && currentChapterIdx < clone.chapters.length
-        ? clone.chapters[currentChapterIdx]
-        : null;
-    const previousChapterData =
-      clone?.chapters && currentChapterIdx - 1 >= 0
-        ? clone.chapters[currentChapterIdx - 1]
-        : null;
+    // Transition mode — entering: chapter boundary'yi geçiyoruz VE directive dolu
+    const hasDirective =
+      !!transitionDirective &&
+      (transitionDirective.timeDelta ||
+        transitionDirective.location ||
+        transitionDirective.mood ||
+        transitionDirective.carryOver);
+    const transitionMode: 'none' | 'entering' =
+      willTransition && hasDirective ? 'entering' : 'none';
 
-    let transitionBlock: string | undefined;
-    if (justEnteredNewChapter && currentChapterData) {
-      const curTitle = currentChapterData.title || '';
-      const curSummary =
-        currentChapterData.summary || '';
-      const prevTitle = previousChapterData?.title || 'Previous chapter';
-      transitionBlock = [
-        `[CHAPTER TRANSITION — MANDATORY]`,
-        `The previous chapter "${prevTitle}" just ended.`,
-        `You are now in: "${curTitle}".`,
-        curSummary ? `Chapter context (must be honored): ${curSummary}` : '',
-        `Override any conflicting location/time/state from recent history if needed. The player is now in the new chapter's context. Respond from this new situation.`,
-      ]
-        .filter(Boolean)
-        .join('\n');
+    // === BRIDGE SUMMARY (transition modda raw history yerine bu kullanılır) ===
+    let previousChapterBridge: string | undefined;
+    if (transitionMode === 'entering') {
+      const chapterKey = String(session.currentChapter); // tamamlanmakta olan chapter
+      const cached = (session as any).bridgeSummaries?.[chapterKey];
+      if (cached) {
+        previousChapterBridge = cached;
+      } else if (recentHistory.length > 0) {
+        this.logger.log(
+          `[chapter-transition] Generating bridge summary for chapter ${chapterKey} of session ${session._id}`,
+        );
+        const summary = await this.aiService.summarizeForTransition(
+          recentHistory.join('\n'),
+        );
+        if (summary) {
+          previousChapterBridge = summary;
+          // Cache'le (async, await etme — yanıtı bloklama)
+          this.sessionModel
+            .updateOne(
+              { _id: session._id },
+              { $set: { [`bridgeSummaries.${chapterKey}`]: summary } },
+            )
+            .catch((err) =>
+              this.logger.warn(
+                `bridge summary cache write failed: ${err?.message || err}`,
+              ),
+            );
+        }
+      }
     }
 
-    // Prompt oluştur
+    // Hangi chapter'ın metadata'sı system prompt'a gitsin?
+    // Transition modda yeni chapter (girişini yapıyoruz), değilse mevcut chapter.
+    const promptChapterData = transitionMode === 'entering' ? nextChapterData : currentChapterData;
+    const promptChapterNumber =
+      transitionMode === 'entering' ? session.currentChapter + 1 : session.currentChapter;
+
+    // Prompt params
     const promptParams: PromptParams = {
       storyTitle: clone?.title || 'Untitled',
       storySummary: clone?.summary || '',
       characters: (clone?.characters || []) as any[],
-      currentChapter: session.currentChapter,
-      chapterTitle: currentChapterData?.title,
-      chapterSummary: currentChapterData?.summary,
+      currentChapter: promptChapterNumber,
+      chapterTitle: promptChapterData?.title,
+      chapterSummary: promptChapterData?.summary,
       playerName: params.playerName,
       playerGender: params.playerGender,
       languageCode: params.languageCode,
       emotionalStates: session.emotionalStates as any,
       censorship: true,
       recentHistory,
-      transitionBlock,
-    } as any;
-
-    // === CHAPTER TRANSITION PATH: Admin startingScene yazmışsa Grok atla ===
-    type GrokLikeResponse = {
-      currentScene?: string;
-      scenes?: any;
-      choices?: any;
-      effects?: any;
-      isEnding?: boolean;
-      endingType?: string;
+      transitionMode,
+      transitionDirective,
+      previousChapterBridge,
     };
-    let grokResponse: GrokLikeResponse;
-    let skippedGrok = false;
 
-    if (willTransition && nextChapterStartingScene) {
-      this.logger.log(
-        `[chapter-transition] Skipping Grok for session ${session._id} — using deterministic startingScene for chapter ${(nextChapterIdx as number) + 1}`,
+    // === Grok çağrısı (gerekirse retry) ===
+    const systemPrompt = buildSystemPrompt(promptParams);
+    const userMessage = buildUserMessage({
+      type,
+      userChoice,
+      recentHistory,
+      transitionMode,
+      previousChapterBridge,
+      currentChapter: promptChapterNumber,
+      transitionDirective,
+    });
+
+    let grokResponse = await this.aiService.callGrokAPI({
+      systemPrompt,
+      userMessage,
+    });
+
+    // === TRANSITION VALIDATION + RETRY ===
+    if (transitionMode === 'entering' && transitionDirective) {
+      const validation = this.validateTransitionResponse(
+        grokResponse,
+        transitionDirective,
       );
-      // Default 4 generic "continue" choice'u üret — AI sonraki adımda gerçek seçimleri üretecek
-      grokResponse = {
-        currentScene: nextChapterStartingScene,
-        choices: [
-          { id: 'c1', text: 'Devam et', type: 'neutral' },
-          { id: 'c2', text: 'Etrafı incele', type: 'neutral' },
-          { id: 'c3', text: 'Düşün', type: 'neutral' },
-          { id: 'c4', text: 'Harekete geç', type: 'neutral' },
-        ],
-        effects: { emotionalChanges: {} },
-        isEnding: false,
-      };
-      skippedGrok = true;
-    } else {
-      const systemPrompt = buildSystemPrompt(promptParams);
-      const userMessage = buildUserMessage({
-        type,
-        userChoice,
-        recentHistory,
-      } as any);
+      this.logger.log(
+        `[chapter-transition] session=${session._id} ch=${promptChapterNumber} ack="${(grokResponse.acknowledged_directive || '').substring(0, 80)}" keywordPass=${validation.pass}`,
+      );
 
-      // Grok API çağrısı
-      grokResponse = await this.aiService.callGrokAPI({
-        systemPrompt,
-        userMessage,
-      });
+      if (!validation.pass) {
+        this.logger.warn(
+          `[chapter-transition] validation FAILED (${validation.reason}), retrying with stricter prompt`,
+        );
+        // Retry: user message sonuna daha sert reminder
+        const retryUserMessage =
+          userMessage +
+          `\n\n[RETRY — PREVIOUS ATTEMPT FAILED TO HONOR DIRECTIVE]\n` +
+          `The currentScene MUST reference: ${validation.missingKeywords.join(', ')}. ` +
+          `Open with explicit time-skip phrasing. Do NOT continue the previous chapter's physical scene.`;
+        try {
+          const retryResponse = await this.aiService.callGrokAPI({
+            systemPrompt,
+            userMessage: retryUserMessage,
+          });
+          const retryValidation = this.validateTransitionResponse(
+            retryResponse,
+            transitionDirective,
+          );
+          if (retryValidation.pass) {
+            this.logger.log('[chapter-transition] retry succeeded');
+            grokResponse = retryResponse;
+          } else {
+            this.logger.warn(
+              '[chapter-transition] retry still failed — using original response',
+            );
+          }
+        } catch (err) {
+          this.logger.warn(
+            `[chapter-transition] retry error: ${(err as Error).message}`,
+          );
+        }
+      }
     }
 
     // Emotional state hesapla (×3 multiplier, clamp -100 to +100)
@@ -350,12 +392,7 @@ export class StorySessionsService {
       isChapterTransition = true;
     }
 
-    // Skip Grok path için logger bilgisi
-    if (skippedGrok) {
-      this.logger.log(
-        `[chapter-transition] Deterministic chapter ${newChapter} intro delivered`,
-      );
-    }
+    // (Eski skippedGrok logu kaldırıldı — artık tüm path'ler AI üretiyor.)
 
     // Progress kaydet
     const progress = await this.progressModel.create({
@@ -396,5 +433,73 @@ export class StorySessionsService {
     );
 
     return progress;
+  }
+
+  /**
+   * Chapter transition response validation — acknowledged_directive alanı dolu mu,
+   * scene text admin'in directive'indeki anahtar kelimeleri (location, timeDelta)
+   * içeriyor mu kontrol eder. Basit substring check; case-insensitive.
+   */
+  private validateTransitionResponse(
+    response: any,
+    directive: {
+      timeDelta?: string;
+      location?: string;
+      mood?: string;
+      carryOver?: string;
+    },
+  ): { pass: boolean; reason: string; missingKeywords: string[] } {
+    const sceneText: string = (
+      response.currentScene ||
+      (response.scenes && Object.values(response.scenes)[0]) ||
+      ''
+    ).toLowerCase();
+    const ack: string = (response.acknowledged_directive || '').toLowerCase();
+
+    // 1) acknowledged_directive boş olmamalı
+    if (!ack || ack.trim().length < 10) {
+      return {
+        pass: false,
+        reason: 'acknowledged_directive missing or too short',
+        missingKeywords: [
+          directive.location,
+          directive.timeDelta,
+        ].filter((x): x is string => !!x),
+      };
+    }
+
+    // 2) Scene text anahtar kelimeleri içersin (en az birini)
+    const extractKeywords = (value?: string): string[] => {
+      if (!value) return [];
+      return value
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .split(/\s+/)
+        .filter((w) => w.length >= 4)
+        .slice(0, 3); // ilk 3 meaningful word
+    };
+
+    const locationKws = extractKeywords(directive.location);
+    const timeKws = extractKeywords(directive.timeDelta);
+
+    const locationMatch =
+      locationKws.length === 0 || locationKws.some((kw) => sceneText.includes(kw) || ack.includes(kw));
+    const timeMatch =
+      timeKws.length === 0 || timeKws.some((kw) => sceneText.includes(kw) || ack.includes(kw));
+
+    if (!locationMatch || !timeMatch) {
+      const missing: string[] = [];
+      if (!locationMatch) missing.push(`location "${directive.location}"`);
+      if (!timeMatch) missing.push(`time "${directive.timeDelta}"`);
+      return {
+        pass: false,
+        reason: `scene missing directive keywords: ${missing.join(', ')}`,
+        missingKeywords: [directive.location, directive.timeDelta].filter(
+          (x): x is string => !!x,
+        ),
+      };
+    }
+
+    return { pass: true, reason: 'ok', missingKeywords: [] };
   }
 }

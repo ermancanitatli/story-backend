@@ -1,6 +1,16 @@
 /**
- * Grok system prompt builder — Cloud Functions index.ts 2454-2532'den port edildi.
- * 50 choice category, 12 dil desteği, PG-13 sansür kuralları.
+ * Grok system prompt builder — screenwriter/director framing.
+ *
+ * Chapter transition sorunu: admin summary'si recent history ile çelişince
+ * Grok recent history'ye yapışıyordu. Çözüm:
+ *  - Director metaphor (AI = yönetmen direktifini uygulayan senaryocu)
+ *  - XML/markdown yapısal hiyerarşi (chapter directive > archived history)
+ *  - Prompt sandwich (direktif hem başta hem user mesaj sonunda tekrarlanır)
+ *  - Chain-of-thought + structured output (acknowledged_directive alanı)
+ *  - Bridge summary (raw history yerine 1-2 cümle özet)
+ *
+ * Kaynaklar: Anthropic context engineering, OpenAI instruction hierarchy paper,
+ * Lost in the Middle (arxiv 2307.03172), AI Dungeon Author's Note pattern.
  */
 
 const CHOICE_CATEGORIES = [
@@ -34,7 +44,6 @@ const LANGUAGE_INSTRUCTIONS: Record<string, string> = {
   zh: '用中文撰写所有内容。',
 };
 
-// Tam isim veya BCP-47 tag gelirse ISO kısa koduna normalize et
 const LANGUAGE_NAME_TO_CODE: Record<string, string> = {
   english: 'en', turkish: 'tr', arabic: 'ar', german: 'de',
   spanish: 'es', french: 'fr', italian: 'it', japanese: 'ja',
@@ -64,6 +73,13 @@ function getLanguageName(code: string): string {
   return names[code] || 'English';
 }
 
+export interface TransitionDirective {
+  timeDelta?: string;
+  location?: string;
+  mood?: string;
+  carryOver?: string;
+}
+
 export interface PromptParams {
   storyTitle: string;
   storySummary: string;
@@ -74,25 +90,39 @@ export interface PromptParams {
   playerName?: string;
   playerGender?: string;
   languageCode?: string;
-  languages?: string[];  // ['tr', 'en'] — çift dilli mod, undefined ise languageCode kullanılır
+  languages?: string[];
   emotionalStates?: Record<string, number>;
-  censorship?: boolean; // PG-13 default
+  censorship?: boolean;
   recentHistory?: string[];
   isMultiplayer?: boolean;
   hostName?: string;
   guestName?: string;
   activePlayerName?: string;
-  // Chapter transition talimatı — yeni chapter'a geçildikten sonraki ilk Grok çağrısında
-  // kullanılır. Recent history ile chapter summary çelişirse chapter summary'yi öncele.
-  transitionBlock?: string;
+
+  // === Chapter transition controls ===
+  // 'entering': chapter boundary'yi geçip yeni chapter'ın ilk sahnesini üretirken kullanılır.
+  // 'none' (default): normal akış.
+  transitionMode?: 'none' | 'entering';
+
+  // Yapılandırılmış yönetmen direktifi (admin panel'den). AI bu alanları hammadde olarak kullanır.
+  transitionDirective?: TransitionDirective;
+
+  // Transition modunda recent history YERİNE kullanılan 1-2 cümlelik bridge summary.
+  // Cache'lenir (session.bridgeSummaries). Raw history'nin recency bias'ını kırar.
+  previousChapterBridge?: string;
 }
 
+/**
+ * System prompt — chapter directive prompt'un en başında (recency bias tersi yönünde),
+ * ayrıca user message sonunda reminder olarak tekrarlanır (sandwich pattern).
+ */
 export function buildSystemPrompt(params: PromptParams): string {
   const categories = pickRandomCategories(4);
   const rawLanguages = params.languages || [params.languageCode || 'en'];
   const languages = rawLanguages.map(normalizeLanguageCode);
   const isBilingual = languages.length > 1;
   const censor = params.censorship !== false;
+  const isTransition = params.transitionMode === 'entering';
 
   let langInstruction: string;
   if (isBilingual) {
@@ -103,9 +133,34 @@ export function buildSystemPrompt(params: PromptParams): string {
     langInstruction = LANGUAGE_INSTRUCTIONS[languages[0]] || LANGUAGE_INSTRUCTIONS['en'];
   }
 
-  let prompt = `You are an interactive story narrator. You create engaging, immersive story scenes with meaningful choices.
+  // === ROLE + DIRECTOR FRAMING ===
+  let prompt = `You are a senior screenwriter executing a director's shot list for an interactive drama. You compose vivid scenes, but you STRICTLY obey any DIRECTOR DIRECTIVE you are given — directives are authoritative and override any conflicting context from earlier scenes. Treat "Recent events" or "Archived past events" as closed history, not the current reality of the scene you are writing.
 
-${langInstruction}
+${langInstruction}`;
+
+  // === CHAPTER BOUNDARY BLOCK (if entering a new chapter) ===
+  if (isTransition) {
+    const d = params.transitionDirective || {};
+    const lines: string[] = [];
+    lines.push('');
+    lines.push('=== CHAPTER BOUNDARY — NARRATIVE PIVOT ACTIVE ===');
+    lines.push('[DIRECTOR DIRECTIVE — MUST OBEY]');
+    if (d.timeDelta) lines.push(`- Time shift: ${d.timeDelta}`);
+    if (d.location) lines.push(`- New location: ${d.location}`);
+    if (d.mood) lines.push(`- Emotional tone: ${d.mood}`);
+    if (d.carryOver) lines.push(`- Carry over from previous chapter: ${d.carryOver}`);
+    if (!d.timeDelta && !d.location && !d.mood && !d.carryOver && params.chapterSummary) {
+      lines.push(`- Context (authoritative): ${params.chapterSummary}`);
+    }
+    lines.push('');
+    lines.push('This scene is an ESTABLISHING SHOT. Open with an explicit time-skip or location-change acknowledgment (e.g. "Three months later...", "Back at home..."), followed by sensory detail that PROVES the new context (lighting, sound, objects, weather).');
+    lines.push('Do NOT continue the previous chapter\'s physical scene (location, ongoing action).');
+    lines.push('Keep carry-over elements (emotions, relationships, memories) intact — only the physical state resets.');
+    lines.push('=== END BOUNDARY ===');
+    prompt += '\n' + lines.join('\n') + '\n';
+  }
+
+  prompt += `
 
 ## Story: ${params.storyTitle}
 ${params.storySummary}
@@ -115,7 +170,6 @@ ${params.characters.map((c) => `- ${c.name}: ${c.description || 'No description'
 
 ## Current Chapter: ${params.currentChapter}${params.chapterTitle ? ` - ${params.chapterTitle}` : ''}
 ${params.chapterSummary || ''}
-${params.transitionBlock ? `\n${params.transitionBlock}\n` : ''}
 
 ## Player: ${params.playerName || 'Player'}${params.playerGender ? ` (${params.playerGender})` : ''}
 
@@ -156,6 +210,15 @@ ${
 - Write the scene from the active player's perspective`;
   }
 
+  // === CHAIN-OF-THOUGHT: acknowledged_directive self-restate ===
+  if (isTransition) {
+    prompt += `
+
+## Mandatory thinking step (transition mode):
+Before composing currentScene, populate \`acknowledged_directive\` with ONE sentence restating the DIRECTOR DIRECTIVE in your own words. Then compose currentScene that FULFILLS that restatement. If your acknowledged_directive is missing or generic, the response will be rejected.`;
+  }
+
+  // === RESPONSE FORMAT ===
   if (isBilingual) {
     const l0 = languages[0];
     const l1 = languages[1];
@@ -163,6 +226,8 @@ ${
 
 ## Response Format (JSON):
 {
+  "scene_type": "${isTransition ? 'chapter_transition' : 'continuation'}",
+  "acknowledged_directive": "${isTransition ? 'REQUIRED: one-sentence restatement of director directive in English' : 'optional'}",
   "scenes": {
     "${l0}": "scene text in first language",
     "${l1}": "scene text in second language"
@@ -195,6 +260,8 @@ ${
 
 ## Response Format (JSON):
 {
+  "scene_type": "${isTransition ? 'chapter_transition' : 'continuation'}",
+  "acknowledged_directive": "${isTransition ? 'REQUIRED: one-sentence restatement of director directive in English' : 'optional'}",
   "currentScene": "string",
   "choices": [
     {"id": "1", "text": "string", "type": "action|dialogue|exploration|decision"},
@@ -216,19 +283,54 @@ ${
   return prompt;
 }
 
+/**
+ * User mesajı — transition modunda raw history yerine bridge summary,
+ * ve mesaj sonunda director directive'in tekrarı (recency bias lehimize).
+ */
 export function buildUserMessage(params: {
   type: 'start' | 'continue';
   userChoice?: string;
   recentHistory?: string[];
+  transitionMode?: 'none' | 'entering';
+  previousChapterBridge?: string;
+  currentChapter?: number;
+  transitionDirective?: TransitionDirective;
 }): string {
   if (params.type === 'start') {
     return 'Begin the story. Set the scene and present the first set of choices.';
   }
 
+  const isTransition = params.transitionMode === 'entering';
+
   let message = '';
-  if (params.recentHistory && params.recentHistory.length > 0) {
-    message += `Recent story context:\n${params.recentHistory.join('\n')}\n\n`;
+
+  if (isTransition && params.previousChapterBridge) {
+    // Raw history yerine bridge özet — "archived past events" olarak işaretli
+    message += `## Archived Past Events (previous chapter, CLOSED)\n${params.previousChapterBridge}\n\n`;
+  } else if (params.recentHistory && params.recentHistory.length > 0) {
+    message += `## Recent story context:\n${params.recentHistory.join('\n')}\n\n`;
   }
-  message += `The player chose: "${params.userChoice}"\n\nContinue the story based on this choice.`;
+
+  message += `The player chose: "${params.userChoice}"\n\n`;
+
+  if (isTransition) {
+    // === TAIL REMINDER (sandwich — prompt sonu recency bias lehimize) ===
+    const d = params.transitionDirective || {};
+    const directiveParts: string[] = [];
+    if (d.timeDelta) directiveParts.push(`Time: ${d.timeDelta}`);
+    if (d.location) directiveParts.push(`Location: ${d.location}`);
+    if (d.mood) directiveParts.push(`Mood: ${d.mood}`);
+    if (d.carryOver) directiveParts.push(`Carry over: ${d.carryOver}`);
+
+    message += `[REMINDER — end of prompt, highest priority]\n`;
+    message += `You are opening Chapter ${params.currentChapter}. The previous chapter's scene is CLOSED.\n`;
+    if (directiveParts.length) {
+      message += `Obey DIRECTOR DIRECTIVE: ${directiveParts.join(' | ')}\n`;
+    }
+    message += `First, fill acknowledged_directive with a one-sentence restatement. Then write currentScene as an ESTABLISHING SHOT fulfilling that directive. Do NOT continue the previous chapter's physical scene.`;
+  } else {
+    message += `Continue the story based on this choice.`;
+  }
+
   return message;
 }
