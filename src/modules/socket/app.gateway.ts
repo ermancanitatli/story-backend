@@ -8,6 +8,8 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Logger, Inject, forwardRef } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -15,6 +17,7 @@ import { PresenceService } from '../presence/presence.service';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
 import { MultiplayerService } from '../multiplayer/multiplayer.service';
 import { FakeMatchOrchestrator } from '../fake-users/fake-match-orchestrator.service';
+import { User } from '../users/schemas/user.schema';
 
 @WebSocketGateway({ cors: true })
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -28,6 +31,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @Inject(forwardRef(() => FakeMatchOrchestrator)) private fakeMatchOrchestrator: FakeMatchOrchestrator,
     private jwtService: JwtService,
     private configService: ConfigService,
+    @InjectModel(User.name) private userModel: Model<User>,
   ) {}
 
   // ─── Helpers ────────────────────────────────────────────────
@@ -54,6 +58,33 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
         secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
       });
       const userId: string = payload.sub;
+
+      // Fresh lookup: reject banned / deleted users
+      const user = await this.userModel
+        .findById(userId)
+        .select('isBanned bannedUntil isDeleted')
+        .lean();
+
+      if (!user) {
+        client.emit('auth:rejected', { code: 'USER_NOT_FOUND' });
+        client.disconnect(true);
+        return;
+      }
+
+      if (user.isDeleted === true) {
+        client.emit('auth:rejected', { code: 'USER_DELETED' });
+        client.disconnect(true);
+        return;
+      }
+
+      if (user.isBanned === true) {
+        client.emit('auth:rejected', {
+          code: 'USER_BANNED',
+          bannedUntil: user.bannedUntil ?? null,
+        });
+        client.disconnect(true);
+        return;
+      }
 
       // Attach userId to socket for later use
       (client as any).userId = userId;
@@ -252,5 +283,30 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   emitSessionCompleted(sessionId: string, data: { endingType?: string }) {
     this.server.to(`mp:${sessionId}`).emit('multiplayer:ended', data);
+  }
+
+  // ─── Admin helpers ──────────────────────────────────────────
+
+  /**
+   * Force-disconnect all active sockets for a user and notify them
+   * with an `auth:rejected` event. Used when an admin bans or deletes
+   * a user while they are online.
+   */
+  async kickUser(
+    userId: string,
+    code: 'USER_BANNED' | 'USER_DELETED' = 'USER_BANNED',
+    reason?: string,
+  ): Promise<void> {
+    const room = `user:${userId}`;
+    this.server.to(room).emit('auth:rejected', { code, reason });
+
+    try {
+      const sockets = await this.server.in(room).fetchSockets();
+      sockets.forEach((s) => s.disconnect(true));
+    } catch (err) {
+      this.logger.warn(
+        `kickUser(${userId}) fetchSockets failed: ${(err as Error)?.message ?? err}`,
+      );
+    }
   }
 }
