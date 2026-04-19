@@ -512,13 +512,21 @@ export class StorySessionsService {
       );
     }
 
+    // Choice'ları normalize et — Grok bazen text'siz choice dönüyor ({id:"4"} gibi)
+    const normalizedChoices = this.normalizeGrokChoices(grokResponse.choices);
+    if (normalizedChoices.length < 4) {
+      this.logger.warn(
+        `[choice-normalize] session=${session._id} step=${newStep}: AI ${4 - normalizedChoices.length} choice döndürmedi, fallback eklendi`,
+      );
+    }
+
     // Progress kaydet
     const progress = await this.progressModel.create({
       sessionId: session._id,
       userId: session.userId,
       stepNumber: newStep,
       currentScene: grokResponse.currentScene,
-      choices: grokResponse.choices,
+      choices: normalizedChoices,
       currentChapter: newChapter,
       chapterStepCount: isChapterTransition ? 0 : newChapterStep,
       effects: normalizedEffects,
@@ -647,6 +655,48 @@ export class StorySessionsService {
    * scene text admin'in directive'indeki anahtar kelimeleri (location, timeDelta)
    * içeriyor mu kontrol eder. Basit substring check; case-insensitive.
    */
+  /**
+   * Grok bazen choice'ları eksik döndürüyor: { id: "4" } gibi text'siz.
+   * Her choice 4 elemanlı olmalı, hepsi text/type ile dolu.
+   * Eksikse fallback text ile tamamla — iOS'ta "boş buton" durumuna düşmesin.
+   */
+  private normalizeGrokChoices(choices: any): any[] {
+    const FALLBACKS = [
+      { text: 'Devam et', type: 'action' },
+      { text: 'Etrafı incele', type: 'exploration' },
+      { text: 'Biraz düşün', type: 'decision' },
+      { text: 'Konuş', type: 'dialogue' },
+    ];
+
+    const extractText = (c: any): string => {
+      if (!c) return '';
+      if (typeof c.text === 'string' && c.text.trim().length > 0) {
+        return c.text.trim();
+      }
+      if (typeof c.text === 'object' && c.text) {
+        const found = Object.values(c.text).find(
+          (v) => typeof v === 'string' && (v as string).trim().length > 0,
+        );
+        if (found) return (found as string).trim();
+      }
+      return '';
+    };
+
+    const arr = Array.isArray(choices) ? choices : [];
+    const normalized: any[] = [];
+    for (let i = 0; i < 4; i++) {
+      const c = arr[i] || {};
+      const text = extractText(c);
+      const fb = FALLBACKS[i];
+      normalized.push({
+        id: c.id != null ? String(c.id) : String(i + 1),
+        text: text || fb.text,
+        type: c.type || fb.type,
+      });
+    }
+    return normalized;
+  }
+
   private validateTransitionResponse(
     response: any,
     directive: {

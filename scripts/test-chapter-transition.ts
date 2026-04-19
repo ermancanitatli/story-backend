@@ -262,26 +262,50 @@ async function main() {
       console.log('[loop] isEnding=true — story ended');
       break;
     }
-    const pickIdx = Math.floor(rand() * choices.length);
-    const pick = choices[pickIdx];
-
     // choiceText bazen bilingual response'ta object olabilir veya boş gelebilir — normalize et
-    const choiceText =
-      typeof pick.text === 'string' && pick.text.trim().length > 0
-        ? pick.text.trim()
-        : typeof pick.text === 'object' && pick.text
-          ? Object.values(pick.text).find(
-              (v) => typeof v === 'string' && (v as string).trim().length > 0,
-            ) as string
-          : null;
+    const extractText = (c: any): string | null => {
+      if (!c) return null;
+      if (typeof c.text === 'string' && c.text.trim().length > 0) return c.text.trim();
+      if (typeof c.text === 'object' && c.text) {
+        const found = Object.values(c.text).find(
+          (v) => typeof v === 'string' && (v as string).trim().length > 0,
+        );
+        if (found) return found as string;
+      }
+      return null;
+    };
 
-    if (!choiceText) {
-      console.error(
-        `[step ${step}] choice.text boş/geçersiz — payload:`,
-        JSON.stringify(pick).substring(0, 200),
+    // Önce geçerli text'i olan choice'ları filtrele
+    const validChoices = choices
+      .map((c: any, idx: number) => ({ c, idx, text: extractText(c) }))
+      .filter((x: any) => x.text);
+
+    if (validChoices.length === 0) {
+      // Hepsi bozuk — fallback generic text ile ilk choice'ı kullan
+      const firstId = choices[0]?.id ?? '1';
+      console.warn(
+        `[step ${step}] ⚠ tüm choice'lar text'siz. Fallback: "Devam et" (id=${firstId}). payload=${JSON.stringify(choices).substring(0, 200)}`,
       );
-      break;
+      try {
+        lastProgress = await call(
+          'POST',
+          `/api/story-sessions/${sessionId}/choice`,
+          { choiceId: String(firstId), choiceText: 'Devam et', choiceType: 'action' },
+          headers,
+        );
+        pushRow(lastProgress, step, '(fallback: Devam et)');
+        continue;
+      } catch (err) {
+        console.error(`[step ${step}] fallback da başarısız:`, (err as Error).message);
+        break;
+      }
     }
+
+    // Geçerli choice'lardan birini rasgele seç
+    const pickFromValid = validChoices[Math.floor(rand() * validChoices.length)];
+    const pick = pickFromValid.c;
+    const pickIdx = pickFromValid.idx;
+    const choiceText = pickFromValid.text;
 
     try {
       lastProgress = await call(
