@@ -126,8 +126,13 @@
       const id = dup.dataset.id;
       try {
         const copy = await window.panelApi.post(`/panel/api/stories/${id}/duplicate`);
-        window.location.href = `/panel/stories/${copy._id}/edit`;
-      } catch {}
+        window.panelToast?.success('Kopyalandı, düzenleyebilirsin');
+        setTimeout(() => {
+          window.location.href = `/panel/stories/${copy._id}/edit`;
+        }, 600);
+      } catch (err) {
+        window.panelToast?.error('Kopyalama başarısız');
+      }
     }
     if (del) {
       const id = del.dataset.id;
