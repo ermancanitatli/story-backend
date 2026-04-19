@@ -86,15 +86,56 @@
       } catch {}
     }
     if (del) {
-      if (!confirm('Silmek istediğine emin misin?')) return;
       const id = del.dataset.id;
+      let sessionCount = 0;
+      try {
+        const res = await window.panelApi.get(`/panel/api/stories/${id}/active-sessions`);
+        sessionCount = res.count || 0;
+      } catch {}
+      openDeleteModal(id, sessionCount);
+    }
+  });
+
+  function openDeleteModal(id, sessionCount) {
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 z-50 bg-black/40 flex items-center justify-center';
+    modal.innerHTML = `
+      <div class="kt-card max-w-md w-full">
+        <div class="kt-card-content p-6">
+          <h3 class="text-lg font-semibold mb-2">Hikayeyi Sil?</h3>
+          <p class="text-sm text-secondary-foreground mb-4">Bu hikayenin <strong>${sessionCount}</strong> aktif oturumu var.
+            ${sessionCount > 0 ? '<br><span class="text-warning">Silinirse mevcut oturumlar devam edebilir ancak yeni kullanıcılar başlatamaz.</span>' : ''}
+          </p>
+          <p class="text-sm mb-4">Silmek için <strong>SIL</strong> yazın:</p>
+          <input id="del-confirm" type="text" class="kt-input mb-4" autocomplete="off"/>
+          <div class="flex justify-end gap-2">
+            <button id="del-cancel" class="kt-btn kt-btn-outline">Vazgeç</button>
+            <button id="del-ok" class="kt-btn kt-btn-destructive" disabled>Sil</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    const input = modal.querySelector('#del-confirm');
+    const okBtn = modal.querySelector('#del-ok');
+    input.addEventListener('input', () => {
+      okBtn.disabled = input.value !== 'SIL';
+    });
+    modal.querySelector('#del-cancel').addEventListener('click', () => modal.remove());
+    okBtn.addEventListener('click', async () => {
+      okBtn.disabled = true;
       try {
         await window.panelApi.delete(`/panel/api/stories/${id}`);
         window.panelToast?.success('Silindi');
-        load();
-      } catch {}
-    }
-  });
+        modal.remove();
+        if (typeof load === 'function') load();
+        else document.querySelector(`tr[data-id="${id}"]`)?.remove();
+      } catch {
+        okBtn.disabled = false;
+      }
+    });
+    input.focus();
+  }
 
   load();
 })();
