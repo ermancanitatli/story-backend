@@ -26,9 +26,9 @@
     <!-- Tab panels -->
     <div class="p-6">
       <div class="tab-panel" data-tab="basic">
-        <div class="flex flex-col gap-5">
-          <div>
-            <label class="kt-form-label">Dil</label>
+        <div class="grid gap-5">
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Dil</label>
             <select id="locale-select" class="kt-input max-w-xs">
               <% ['en','tr','ar','de','es','fr','it','ja','ko','pt','ru','zh'].forEach(l => { %>
                 <option value="<%= l %>"><%= l.toUpperCase() %></option>
@@ -38,48 +38,49 @@
 
           <div id="locale-badges" class="flex flex-wrap gap-2"></div>
 
-          <div class="flex flex-col gap-1">
-            <label class="kt-form-label">Başlık (<span class="locale-label">EN</span>)</label>
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Başlık (<span class="locale-label">EN</span>)</label>
             <input id="f-title" class="kt-input" placeholder="Hikaye başlığı"/>
           </div>
-          <div class="flex flex-col gap-1">
-            <label class="kt-form-label">Özet (<span class="locale-label">EN</span>)</label>
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Özet (<span class="locale-label">EN</span>)</label>
             <textarea id="f-summary" class="kt-input" rows="3" placeholder="Kısa özet"></textarea>
           </div>
-          <div class="flex flex-col gap-1">
-            <label class="kt-form-label">Çocuk Dostu Özet (<span class="locale-label">EN</span>)</label>
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Çocuk Dostu Özet (<span class="locale-label">EN</span>)</label>
             <textarea id="f-summary-safe" class="kt-input" rows="3" placeholder="Aile dostu versiyon"></textarea>
           </div>
 
-          <hr/>
+          <div class="border-t border-border my-2"></div>
 
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="kt-form-label">Tür</label>
-              <input id="f-genre" class="kt-input"/>
-            </div>
-            <div>
-              <label class="kt-form-label">Zorluk</label>
-              <select id="f-difficulty" class="kt-input">
-                <option value="">—</option>
-                <option value="easy">Kolay</option>
-                <option value="medium">Orta</option>
-                <option value="hard">Zor</option>
-              </select>
-            </div>
-            <div>
-              <label class="kt-form-label">Yaş</label>
-              <input id="f-age" class="kt-input"/>
-            </div>
-            <div>
-              <label class="kt-form-label">Kredi Maliyeti</label>
-              <input id="f-credit-cost" type="number" min="0" class="kt-input"/>
-            </div>
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Tür</label>
+            <input id="f-genre" class="kt-input"/>
+          </div>
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Zorluk</label>
+            <select id="f-difficulty" class="kt-input">
+              <option value="">—</option>
+              <option value="easy">Kolay</option>
+              <option value="medium">Orta</option>
+              <option value="hard">Zor</option>
+            </select>
+          </div>
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Yaş</label>
+            <input id="f-age" class="kt-input"/>
+          </div>
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Kredi Maliyeti</label>
+            <input id="f-credit-cost" type="number" min="0" class="kt-input"/>
           </div>
 
-          <div class="flex items-center gap-4">
-            <label class="flex items-center gap-2"><input id="f-is-paid" type="checkbox" class="kt-checkbox"/> Ücretli</label>
-            <label class="flex items-center gap-2"><input id="f-is-published" type="checkbox" class="kt-checkbox"/> Yayınla</label>
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Yayın</label>
+            <div class="flex items-center gap-6">
+              <label class="kt-label flex items-center gap-2"><input id="f-is-paid" type="checkbox" class="kt-checkbox"/> <span class="kt-checkbox-label">Ücretli</span></label>
+              <label class="kt-label flex items-center gap-2"><input id="f-is-published" type="checkbox" class="kt-checkbox"/> <span class="kt-checkbox-label">Yayınla</span></label>
+            </div>
           </div>
         </div>
       </div>
