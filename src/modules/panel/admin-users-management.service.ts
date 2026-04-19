@@ -1,11 +1,13 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId, Types } from 'mongoose';
 import { User } from '../users/schemas/user.schema';
 import { Friendship } from '../friendships/schemas/friendship.schema';
 import { StorySession } from '../story-sessions/schemas/story-session.schema';
+import { AppGateway } from '../socket/app.gateway';
 import { AdminAuditLogService } from './admin-audit-log.service';
 import { AdminUpdateUserDto } from './dto/admin-update-user.dto';
+import { BanUserDto } from './dto/ban-user.dto';
 
 export interface ListUsersFilter {
   search?: string;
@@ -39,6 +41,7 @@ export class AdminUsersManagementService {
     @InjectModel(Friendship.name) private friendshipModel: Model<Friendship>,
     @InjectModel(StorySession.name) private storySessionModel: Model<StorySession>,
     private auditLogService: AdminAuditLogService,
+    @Inject(forwardRef(() => AppGateway)) private readonly gateway: AppGateway,
   ) {}
 
   async listUsers(filter: ListUsersFilter = {}): Promise<ListUsersResult> {
@@ -173,6 +176,106 @@ export class AdminUsersManagementService {
       });
     } catch (err) {
       // Audit failure sessiz
+    }
+
+    return updated as any;
+  }
+
+  async banUser(
+    id: string,
+    dto: BanUserDto,
+    actor: { adminId: string; adminUsername: string },
+  ): Promise<User> {
+    if (!isValidObjectId(id)) throw new NotFoundException('User not found');
+    const before = await this.userModel.findById(id).lean().exec();
+    if (!before) throw new NotFoundException('User not found');
+
+    const until = dto.until ? new Date(dto.until) : null;
+    const updated = await this.userModel
+      .findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            isBanned: true,
+            bannedAt: new Date(),
+            banReason: dto.reason || null,
+            bannedUntil: until,
+          },
+        },
+        { new: true },
+      )
+      .lean()
+      .exec();
+
+    // Revoke refresh tokens
+    try {
+      await this.userModel.db.collection('refresh_tokens').updateMany(
+        { userId: new Types.ObjectId(id) },
+        { $set: { revoked: true, revokedAt: new Date() } },
+      );
+    } catch {
+      // tolerate
+    }
+
+    // Kick active sockets
+    try {
+      await this.gateway.kickUser(id, 'USER_BANNED', dto.reason);
+    } catch {
+      // tolerate
+    }
+
+    // Audit
+    try {
+      await this.auditLogService.record({
+        adminId: actor.adminId,
+        adminUsername: actor.adminUsername,
+        action: 'BAN',
+        targetUserId: id,
+        targetUserHandle: (before as any).userHandle,
+        reason: dto.reason,
+        metadata: { bannedUntil: until },
+      });
+    } catch {
+      // tolerate
+    }
+
+    return updated as any;
+  }
+
+  async unbanUser(
+    id: string,
+    actor: { adminId: string; adminUsername: string },
+  ): Promise<User> {
+    if (!isValidObjectId(id)) throw new NotFoundException('User not found');
+    const before = await this.userModel.findById(id).lean().exec();
+    if (!before) throw new NotFoundException('User not found');
+
+    const updated = await this.userModel
+      .findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            isBanned: false,
+            bannedAt: null,
+            banReason: null,
+            bannedUntil: null,
+          },
+        },
+        { new: true },
+      )
+      .lean()
+      .exec();
+
+    try {
+      await this.auditLogService.record({
+        adminId: actor.adminId,
+        adminUsername: actor.adminUsername,
+        action: 'UNBAN',
+        targetUserId: id,
+        targetUserHandle: (before as any).userHandle,
+      });
+    } catch {
+      // tolerate
     }
 
     return updated as any;
