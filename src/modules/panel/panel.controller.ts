@@ -9,7 +9,10 @@ import {
   Res,
   UseFilters,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { Request, Response } from 'express';
 import { SessionAuthGuard } from './guards/session-auth.guard';
 import { PanelPublic } from './decorators/panel-public.decorator';
@@ -18,6 +21,8 @@ import { PanelHtmlExceptionFilter } from '../../common/filters/panel-html-except
 import { AdminUsersService } from './admin-users.service';
 import { AdminAuditLogService } from './admin-audit-log.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { PageViewInterceptor } from './interceptors/page-view.interceptor';
+import { AdminPageView } from './schemas/admin-page-view.schema';
 
 type PanelSession = {
   adminId?: string;
@@ -32,10 +37,16 @@ type PanelSession = {
 @Public()
 @UseGuards(SessionAuthGuard)
 @UseFilters(PanelHtmlExceptionFilter)
+@UseInterceptors(PageViewInterceptor)
 export class PanelController {
+  private readonly pageViewEnabled =
+    process.env.PANEL_PAGE_VIEW_ENABLED === 'true';
+
   constructor(
     private readonly adminUsersService: AdminUsersService,
     private readonly auditService: AdminAuditLogService,
+    @InjectModel(AdminPageView.name)
+    private readonly pageViewModel: Model<AdminPageView>,
   ) {}
 
   @Get('login')
@@ -147,12 +158,29 @@ export class PanelController {
 
   @Get()
   @Render('panel/dashboard')
-  dashboard(@Req() req: Request & { session: PanelSession }) {
+  async dashboard(@Req() req: Request & { session: PanelSession }) {
+    const topPages = this.pageViewEnabled
+      ? await this.pageViewModel.aggregate([
+          {
+            $match: {
+              createdAt: {
+                $gte: new Date(Date.now() - 7 * 24 * 3600 * 1000),
+              },
+            },
+          },
+          { $group: { _id: '$path', count: { $sum: 1 } } },
+          { $sort: { count: -1 } },
+          { $limit: 5 },
+        ])
+      : [];
+
     return {
       title: 'Dashboard',
       username: req.session?.username || 'Admin',
       currentPath: req.path,
       breadcrumbs: [{ label: 'Dashboard' }],
+      topPages,
+      pageViewEnabled: this.pageViewEnabled,
     };
   }
 
