@@ -284,22 +284,24 @@
 
         const hideIcon = hidden ? 'ki-eye' : 'ki-eye-slash';
         const hideTitle = hidden ? 'Görünür yap' : 'Gizle';
+        const hideBtnColor = hidden ? 'bg-warning' : 'bg-black/70';
         return `
           <div class="media-card group relative rounded-lg border border-border overflow-hidden hover:ring-2 ring-primary transition ${hidden ? 'opacity-50' : ''} inline-block align-top"
                data-item-id="${esc(m._id || '')}" draggable="true">
             ${inner}
             ${orderBadge}
             ${dragHandle}
-            ${hiddenBadge}
             ${videoBadge}
-            <div class="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition z-10">
-              <button type="button" class="media-toggle-hidden size-6 rounded-md bg-black/70 text-white text-xs flex items-center justify-center hover:bg-black/90" title="${hideTitle}">
-                <i class="ki-filled ${hideIcon}"></i>
-              </button>
-              <button type="button" class="media-open size-6 rounded-md bg-black/70 text-white text-xs flex items-center justify-center hover:bg-black/90" title="Detay">
+            <!-- Gizle/göster her zaman görünür -->
+            <button type="button" class="media-toggle-hidden absolute top-1.5 right-1.5 size-7 rounded-md ${hideBtnColor} text-white text-sm flex items-center justify-center hover:opacity-90 z-10 shadow-md" title="${hideTitle}">
+              <i class="ki-filled ${hideIcon}"></i>
+            </button>
+            <!-- Detay + Sil hover'da -->
+            <div class="absolute top-1.5 right-10 flex gap-1 opacity-0 group-hover:opacity-100 transition z-10">
+              <button type="button" class="media-open size-7 rounded-md bg-black/70 text-white text-sm flex items-center justify-center hover:bg-black/90" title="Detay">
                 <i class="ki-filled ki-pencil"></i>
               </button>
-              <button type="button" class="media-del size-6 rounded-md bg-destructive text-white text-xs flex items-center justify-center hover:opacity-90" title="Sil">×</button>
+              <button type="button" class="media-del size-7 rounded-md bg-destructive text-white text-sm flex items-center justify-center hover:opacity-90" title="Sil">×</button>
             </div>
           </div>
         `;
