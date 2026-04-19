@@ -1,0 +1,42 @@
+<% layout('panel/layout') %>
+
+<div class="flex items-center justify-between mb-5">
+  <h1 class="text-2xl font-semibold">Bildirim Geçmişi</h1>
+  <a href="/panel/notifications" class="kt-btn kt-btn-primary"><i class="ki-filled ki-plus me-1"></i>Yeni Gönderim</a>
+</div>
+
+<div class="kt-card">
+  <div class="kt-card-content p-0">
+    <table class="kt-table w-full">
+      <thead>
+        <tr>
+          <th>Tarih</th>
+          <th>Admin</th>
+          <th>Segment</th>
+          <th>Başlık</th>
+          <th>Durum</th>
+          <th>Alıcı</th>
+          <th class="text-end">Detay</th>
+        </tr>
+      </thead>
+      <tbody id="history-tbody">
+        <tr><td colspan="7" class="p-8 text-center">Yükleniyor...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Detay drawer -->
+<div id="detail-drawer" class="hidden fixed inset-y-0 end-0 w-full max-w-lg bg-background border-s border-border shadow-lg overflow-y-auto z-50">
+  <div class="p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-semibold">Bildirim Detayı</h3>
+      <button class="kt-btn kt-btn-icon kt-btn-ghost" onclick="document.getElementById('detail-drawer').classList.add('hidden')">
+        <i class="ki-filled ki-cross"></i>
+      </button>
+    </div>
+    <pre id="detail-json" class="text-xs bg-muted/30 p-3 rounded overflow-x-auto"></pre>
+  </div>
+</div>
+
+<script src="/panel-assets/js/notifications-history.js"></script>
