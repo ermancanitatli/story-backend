@@ -242,6 +242,69 @@ export class AdminUsersManagementService {
     return updated as any;
   }
 
+  async softDeleteUser(
+    id: string,
+    actor: { adminId: string; adminUsername: string },
+    reason?: string,
+  ): Promise<User> {
+    if (!isValidObjectId(id)) throw new NotFoundException('User not found');
+    const before = await this.userModel.findById(id).lean().exec();
+    if (!before) throw new NotFoundException('User not found');
+
+    const now = new Date();
+    const updated = await this.userModel
+      .findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            isDeleted: true,
+            deletedAt: now,
+            anonymizedAt: now,
+            email: null,
+            userHandle: null,
+            displayName: 'Deleted User',
+            photoURL: null,
+          },
+        },
+        { new: true },
+      )
+      .lean()
+      .exec();
+
+    // Revoke refresh tokens
+    try {
+      await this.userModel.db.collection('refresh_tokens').updateMany(
+        { userId: new Types.ObjectId(id) },
+        { $set: { revoked: true, revokedAt: now } },
+      );
+    } catch {
+      // tolerate
+    }
+
+    // Socket kick
+    try {
+      await this.gateway.kickUser(id, 'USER_DELETED', reason);
+    } catch {
+      // tolerate
+    }
+
+    // Audit
+    try {
+      await this.auditLogService.record({
+        adminId: actor.adminId,
+        adminUsername: actor.adminUsername,
+        action: 'DELETE',
+        targetUserId: id,
+        targetUserHandle: (before as any).userHandle,
+        reason,
+      });
+    } catch {
+      // tolerate
+    }
+
+    return updated as any;
+  }
+
   async unbanUser(
     id: string,
     actor: { adminId: string; adminUsername: string },

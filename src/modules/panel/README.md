@@ -184,3 +184,32 @@ async updateFoo(@Param('id') id: string, ...) { ... }
 - **Mobile/REST API:** `ApiJsonExceptionFilter` — `{ error: { code, message, requestId } }` JSON formatında döner.
 
 İkisi birbirini etkilemez; panel kırıldığında API, API kırıldığında panel çalışmaya devam eder.
+
+---
+
+## Manual QA Smoke Test
+
+Panel deploy sonrası 6 adımlı manuel check:
+
+| # | Adım | Beklenen |
+|---|------|----------|
+| 1 | `/panel/login` açılır, form render olur | Admin Girişi başlığı + iki input + "Giriş Yap" butonu görünür |
+| 2 | Doğru `admin / Dede21erot_*` ile login | `/panel`'e redirect, dashboard (welcome + 4 quick link kartı) render olur |
+| 3 | Sidebar aktif highlight | Dashboard menü item'ı `kt-menu-item-active` class'ı taşır, diğerleri pasif |
+| 4 | Mobile drawer toggle | Chrome DevTools responsive 390px modda sidebar gizli; header hamburger tıklandığında drawer açılır + backdrop görünür |
+| 5 | Header dropdown logout | Avatar dropdown → "Çıkış Yap" → `/panel/login`'e redirect, `panel.sid` cookie temizlenir |
+| 6 | Sidebar footer logout | Sidebar en altındaki logout iconu → aynı akış |
+
+### Build doğrulaması
+```
+cd story-backend && npm run build
+```
+Exit code 0 olmalı, TypeScript hatası yok.
+
+### Viewport testleri
+- Desktop: 1440×900
+- Mobile: 390×844 (iPhone 14 Pro simülasyonu)
+- Responsive breakpoint: `lg` = 1024px
+
+### Logout sonrası geri düğmesi
+Logout sonrası tarayıcı geri tuşu `/panel`'e gittiğinde `SessionAuthGuard` `/panel/login`'e yönlendirmelidir (session destroyed, cookie cleared).
