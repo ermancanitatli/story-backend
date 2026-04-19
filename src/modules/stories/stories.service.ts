@@ -259,6 +259,201 @@ export class StoriesService {
       .exec();
   }
 
+  // -------------------------------------------------------------------------
+  // Chapter media management — dual-write: chapters[i].mediaItems + scenes[0].mediaItems
+  // -------------------------------------------------------------------------
+
+  private async loadStoryOrThrow(storyId: string): Promise<any> {
+    const story = await this.storyModel.findById(storyId).lean().exec();
+    if (!story) throw new NotFoundException('Story not found');
+    return story;
+  }
+
+  private validateChapter(story: any, chapterIdx: number): void {
+    if (
+      !Array.isArray(story.chapters) ||
+      chapterIdx < 0 ||
+      chapterIdx >= story.chapters.length
+    ) {
+      throw new NotFoundException(`Chapter ${chapterIdx} not found`);
+    }
+  }
+
+  async addChapterMedia(
+    storyId: string,
+    chapterIdx: number,
+    item: {
+      url: string;
+      thumbnail?: string;
+      title?: string;
+      alt?: string;
+      order?: number;
+      hidden?: boolean;
+      mimeType?: string;
+    },
+  ): Promise<any> {
+    const story = await this.loadStoryOrThrow(storyId);
+    this.validateChapter(story, chapterIdx);
+
+    const { randomUUID } = await import('crypto');
+    const chapter = story.chapters[chapterIdx];
+    const existingMedia = Array.isArray(chapter.mediaItems)
+      ? chapter.mediaItems
+      : [];
+    const newItem = {
+      _id: randomUUID(),
+      url: item.url,
+      thumbnail: item.thumbnail,
+      title: item.title,
+      alt: item.alt,
+      hidden: item.hidden ?? false,
+      mimeType: item.mimeType,
+      order:
+        typeof item.order === 'number' ? item.order : existingMedia.length,
+    };
+
+    const mediaPath = `chapters.${chapterIdx}.mediaItems`;
+    const scenePath = `chapters.${chapterIdx}.scenes.0.mediaItems`;
+
+    // Ensure scene[0] exists if chapter has no scenes yet
+    const hasScene =
+      Array.isArray(chapter.scenes) && chapter.scenes.length > 0;
+    const update: any = { $push: { [mediaPath]: newItem } };
+    if (hasScene) {
+      update.$push[scenePath] = newItem;
+    } else {
+      update.$set = {
+        [`chapters.${chapterIdx}.scenes`]: [
+          {
+            title: chapter.title || 'Scene',
+            description: chapter.summary || '',
+            mediaItems: [newItem],
+          },
+        ],
+      };
+    }
+
+    const updated = await this.storyModel
+      .findByIdAndUpdate(storyId, update, { new: true })
+      .lean()
+      .exec();
+    return updated;
+  }
+
+  async updateChapterMedia(
+    storyId: string,
+    chapterIdx: number,
+    itemId: string,
+    patch: Partial<{
+      title: string;
+      alt: string;
+      order: number;
+      hidden: boolean;
+      thumbnail: string;
+      mimeType: string;
+    }>,
+  ): Promise<any> {
+    const story = await this.loadStoryOrThrow(storyId);
+    this.validateChapter(story, chapterIdx);
+
+    const chapter = story.chapters[chapterIdx];
+    const mediaItems: any[] = Array.isArray(chapter.mediaItems)
+      ? chapter.mediaItems
+      : [];
+    const midx = mediaItems.findIndex((m) => m._id === itemId);
+    if (midx < 0) throw new NotFoundException('Media item not found');
+
+    const updatedItem = { ...mediaItems[midx], ...patch };
+    const newArr = mediaItems.slice();
+    newArr[midx] = updatedItem;
+
+    // Also update in scenes[0].mediaItems if present
+    const sceneArr: any[] =
+      (chapter.scenes && chapter.scenes[0] && chapter.scenes[0].mediaItems) ||
+      [];
+    const sidx = sceneArr.findIndex((m) => m._id === itemId);
+    const set: any = { [`chapters.${chapterIdx}.mediaItems`]: newArr };
+    if (sidx >= 0) {
+      const newScene = sceneArr.slice();
+      newScene[sidx] = { ...sceneArr[sidx], ...patch };
+      set[`chapters.${chapterIdx}.scenes.0.mediaItems`] = newScene;
+    }
+
+    const updated = await this.storyModel
+      .findByIdAndUpdate(storyId, { $set: set }, { new: true })
+      .lean()
+      .exec();
+    return updated;
+  }
+
+  async deleteChapterMedia(
+    storyId: string,
+    chapterIdx: number,
+    itemId: string,
+  ): Promise<void> {
+    const story = await this.loadStoryOrThrow(storyId);
+    this.validateChapter(story, chapterIdx);
+
+    const chapter = story.chapters[chapterIdx];
+    const mediaItems: any[] = Array.isArray(chapter.mediaItems)
+      ? chapter.mediaItems
+      : [];
+    const newMedia = mediaItems.filter((m) => m._id !== itemId);
+    const sceneArr: any[] =
+      (chapter.scenes && chapter.scenes[0] && chapter.scenes[0].mediaItems) ||
+      [];
+    const newScene = sceneArr.filter((m) => m._id !== itemId);
+
+    const set: any = { [`chapters.${chapterIdx}.mediaItems`]: newMedia };
+    if (chapter.scenes && chapter.scenes[0]) {
+      set[`chapters.${chapterIdx}.scenes.0.mediaItems`] = newScene;
+    }
+
+    await this.storyModel
+      .findByIdAndUpdate(storyId, { $set: set })
+      .exec();
+  }
+
+  async reorderChapterMedia(
+    storyId: string,
+    chapterIdx: number,
+    orderedItemIds: string[],
+  ): Promise<void> {
+    const story = await this.loadStoryOrThrow(storyId);
+    this.validateChapter(story, chapterIdx);
+
+    const chapter = story.chapters[chapterIdx];
+    const mediaItems: any[] = Array.isArray(chapter.mediaItems)
+      ? chapter.mediaItems
+      : [];
+    const byId = new Map(mediaItems.map((m) => [m._id, m]));
+    const reordered = orderedItemIds
+      .map((id, idx) => {
+        const m = byId.get(id);
+        if (!m) return null;
+        return { ...m, order: idx };
+      })
+      .filter(Boolean);
+
+    // Append any items that weren't in orderedItemIds at the end
+    const leftover = mediaItems.filter(
+      (m) => !orderedItemIds.includes(m._id),
+    );
+    const finalArr = [
+      ...reordered,
+      ...leftover.map((m, i) => ({ ...m, order: reordered.length + i })),
+    ];
+
+    const set: any = { [`chapters.${chapterIdx}.mediaItems`]: finalArr };
+    // Sync scenes[0] as well
+    if (chapter.scenes && chapter.scenes[0]) {
+      set[`chapters.${chapterIdx}.scenes.0.mediaItems`] = finalArr;
+    }
+    await this.storyModel
+      .findByIdAndUpdate(storyId, { $set: set })
+      .exec();
+  }
+
   /**
    * Aktif oturum sayısı — admin arayüzünde silme uyarısı için kullanılır.
    */

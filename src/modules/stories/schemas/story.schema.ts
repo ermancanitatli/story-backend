@@ -40,6 +40,12 @@ export class MediaItem {
 
   @Prop()
   thumbnail?: string;
+
+  @Prop({ default: false })
+  hidden?: boolean;
+
+  @Prop()
+  mimeType?: string;
 }
 
 @Schema({ _id: false })

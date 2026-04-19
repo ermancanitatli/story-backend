@@ -1,66 +1,6 @@
 (function() {
   function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-  function sortByOrder(arr) {
-    return arr.slice().sort((a, b) => (a?.order ?? 0) - (b?.order ?? 0));
-  }
-
-  function renderLegacyMedia(images, videos) {
-    if ((!images || images.length === 0) && (!videos || videos.length === 0)) return '';
-    let html = '<div class="mt-5 pt-5 border-t border-border flex flex-col gap-5">';
-    html += '<div class="flex items-center gap-2"><span class="kt-badge kt-badge-sm kt-badge-outline">Legacy</span><span class="text-xs text-muted-foreground">Firestore formatı — readonly, migration sonrası kaldırılacak</span></div>';
-
-    if (images && images.length > 0) {
-      const sorted = sortByOrder(images);
-      html += `
-        <div>
-          <div class="text-sm font-medium mb-2">Legacy Görseller (${sorted.length})</div>
-          <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-            ${sorted.map(img => {
-              const src = esc(img.thumbnail || img.url || '');
-              const full = esc(img.url || '');
-              const isHidden = img.hidden === true;
-              const wrapperClass = isHidden ? 'opacity-40' : '';
-              const badge = isHidden ? '<span class="absolute top-1 left-1 kt-badge kt-badge-xs kt-badge-warning">gizli</span>' : '';
-              return `
-                <a href="${full}" target="_blank" rel="noopener" class="relative block aspect-square rounded border border-border overflow-hidden bg-muted ${wrapperClass}">
-                  <img src="${src}" alt="" class="w-full h-full object-cover max-h-24" loading="lazy"/>
-                  ${badge}
-                </a>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      `;
-    }
-
-    if (videos && videos.length > 0) {
-      const sorted = sortByOrder(videos);
-      html += `
-        <div>
-          <div class="text-sm font-medium mb-2">Legacy Videolar (${sorted.length})</div>
-          <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-            ${sorted.map(v => {
-              const thumb = esc(v.thumbnail || '');
-              const full = esc(v.url || '');
-              return `
-                <a href="${full}" target="_blank" rel="noopener" class="relative block aspect-square rounded border border-border overflow-hidden bg-muted">
-                  ${thumb ? `<img src="${thumb}" alt="" class="w-full h-full object-cover max-h-24" loading="lazy"/>` : '<div class="w-full h-full bg-muted"></div>'}
-                  <span class="absolute inset-0 flex items-center justify-center bg-black/30">
-                    <i class="ki-filled ki-play text-white text-2xl"></i>
-                  </span>
-                </a>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      `;
-    }
-
-    html += '</div>';
-    return html;
-  }
-
   function renderChapters() {
     const container = document.getElementById('chapters-list');
     const empty = document.getElementById('chapters-empty');
@@ -80,8 +20,6 @@
       card.className = 'chapter-card kt-card';
       card.dataset.index = ci;
       const scenes = ch.scenes || [];
-      const legacyImages = (ch.mediaAssets && Array.isArray(ch.mediaAssets.images)) ? ch.mediaAssets.images : [];
-      const legacyVideos = (ch.mediaAssets && Array.isArray(ch.mediaAssets.videos)) ? ch.mediaAssets.videos : [];
       card.innerHTML = `
         <div class="kt-card-content p-4">
           <div class="flex items-center gap-2 mb-3">
@@ -108,7 +46,6 @@
               </div>
             `).join('')}
           </div>
-          ${renderLegacyMedia(legacyImages, legacyVideos)}
         </div>
       `;
       container.appendChild(card);

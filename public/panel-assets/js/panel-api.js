@@ -40,5 +40,6 @@
     put:    (url, body)    => request('PUT', url, body),
     patch:  (url, body)    => request('PATCH', url, body),
     delete: (url, body)    => request('DELETE', url, body),
+    del:    (url, body)    => request('DELETE', url, body),
   };
 })(window);

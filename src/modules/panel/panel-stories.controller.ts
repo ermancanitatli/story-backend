@@ -21,6 +21,7 @@ import { UpdateStoryDto } from '../stories/dto/update-story.dto';
 import { ListStoryQueryDto } from '../stories/dto/list-story-query.dto';
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
 
 @Controller('panel/api/stories')
 @Public()
@@ -124,6 +125,135 @@ export class PanelStoriesController {
     @Body() body: { type: 'cover' | 'gallery'; orderedIndexes: number[] },
   ) {
     await this.stories.reorderImages(id, body.type, body.orderedIndexes);
+    return { reordered: true };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Chapter-level media endpoints (STORY-CH)
+  // ---------------------------------------------------------------------------
+
+  @Post(':id/chapters/:chapterIdx/presign')
+  async presignChapterMedia(
+    @Param('id') storyId: string,
+    @Param('chapterIdx') chapterIdxStr: string,
+    @Body() body: { contentType: string; kind: 'image' | 'video' },
+  ) {
+    const chapterIdx = parseInt(chapterIdxStr, 10);
+    if (Number.isNaN(chapterIdx) || chapterIdx < 0) {
+      throw new BadRequestException('Geçersiz chapter index');
+    }
+    const ct = body.contentType?.toLowerCase();
+    const kind = body.kind;
+    if (kind !== 'image' && kind !== 'video') {
+      throw new BadRequestException('kind: image | video olmalı');
+    }
+    const allowed = kind === 'image' ? ALLOWED_IMAGE_TYPES : ALLOWED_VIDEO_TYPES;
+    if (!ct || !allowed.includes(ct)) {
+      throw new BadRequestException(
+        `İzin verilen türler (${kind}): ${allowed.join(', ')}`,
+      );
+    }
+    const ext = ct.split('/')[1].replace('jpeg', 'jpg').replace('quicktime', 'mov');
+    const imageId = randomUUID();
+    const subdir = kind === 'image' ? 'images' : 'videos';
+    const path = `stories/${storyId}/chapters/${chapterIdx}/${subdir}/${imageId}.${ext}`;
+
+    const { uploadUrl, publicUrl } = await this.storage.presignPutObject(
+      path,
+      ct,
+      15 * 60,
+    );
+
+    return { uploadUrl, publicUrl, imageId, path, mimeType: ct };
+  }
+
+  @Post(':id/chapters/:chapterIdx/media')
+  async addChapterMedia(
+    @Param('id') storyId: string,
+    @Param('chapterIdx') chapterIdxStr: string,
+    @Body()
+    body: {
+      url: string;
+      thumbnail?: string;
+      title?: string;
+      alt?: string;
+      order?: number;
+      hidden?: boolean;
+      mimeType?: string;
+    },
+  ) {
+    const chapterIdx = parseInt(chapterIdxStr, 10);
+    if (Number.isNaN(chapterIdx) || chapterIdx < 0) {
+      throw new BadRequestException('Geçersiz chapter index');
+    }
+    if (!body?.url) throw new BadRequestException('url zorunlu');
+    const updated = await this.stories.addChapterMedia(storyId, chapterIdx, body);
+    const chapter = (updated as any)?.chapters?.[chapterIdx];
+    const items = chapter?.mediaItems || [];
+    return { item: items[items.length - 1], mediaItems: items };
+  }
+
+  @Patch(':id/chapters/:chapterIdx/media/:itemId')
+  async updateChapterMedia(
+    @Param('id') storyId: string,
+    @Param('chapterIdx') chapterIdxStr: string,
+    @Param('itemId') itemId: string,
+    @Body()
+    body: Partial<{
+      title: string;
+      alt: string;
+      order: number;
+      hidden: boolean;
+      thumbnail: string;
+      mimeType: string;
+    }>,
+  ) {
+    const chapterIdx = parseInt(chapterIdxStr, 10);
+    if (Number.isNaN(chapterIdx) || chapterIdx < 0) {
+      throw new BadRequestException('Geçersiz chapter index');
+    }
+    const updated = await this.stories.updateChapterMedia(
+      storyId,
+      chapterIdx,
+      itemId,
+      body,
+    );
+    const items = (updated as any)?.chapters?.[chapterIdx]?.mediaItems || [];
+    return { item: items.find((m: any) => m._id === itemId), mediaItems: items };
+  }
+
+  @Delete(':id/chapters/:chapterIdx/media/:itemId')
+  async deleteChapterMedia(
+    @Param('id') storyId: string,
+    @Param('chapterIdx') chapterIdxStr: string,
+    @Param('itemId') itemId: string,
+  ) {
+    const chapterIdx = parseInt(chapterIdxStr, 10);
+    if (Number.isNaN(chapterIdx) || chapterIdx < 0) {
+      throw new BadRequestException('Geçersiz chapter index');
+    }
+    await this.stories.deleteChapterMedia(storyId, chapterIdx, itemId);
+    return { deleted: true };
+  }
+
+  @Put(':id/chapters/:chapterIdx/media/order')
+  async reorderChapterMedia(
+    @Param('id') storyId: string,
+    @Param('chapterIdx') chapterIdxStr: string,
+    @Body() body: { orderedItemIds: string[] },
+  ) {
+    const chapterIdx = parseInt(chapterIdxStr, 10);
+    if (Number.isNaN(chapterIdx) || chapterIdx < 0) {
+      throw new BadRequestException('Geçersiz chapter index');
+    }
+    if (!Array.isArray(body?.orderedItemIds)) {
+      throw new BadRequestException('orderedItemIds array olmalı');
+    }
+    await this.stories.reorderChapterMedia(
+      storyId,
+      chapterIdx,
+      body.orderedItemIds,
+    );
     return { reordered: true };
   }
 }

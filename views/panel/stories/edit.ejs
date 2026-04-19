@@ -122,14 +122,95 @@
           </section>
 
           <section>
-            <h3 class="text-base font-semibold mb-3">Galeri Görselleri</h3>
-            <div id="gallery-dropzone" class="border-2 border-dashed border-border rounded-md p-4 mb-4 text-center cursor-pointer hover:bg-muted/30">
-              <i class="ki-filled ki-picture text-[32px] text-muted-foreground"></i>
-              <p class="text-sm mt-2">Çoklu dosya sürükle-bırak veya tıkla</p>
-              <input type="file" id="gallery-input" accept="image/jpeg,image/png,image/webp" multiple class="hidden"/>
+            <h3 class="text-base font-semibold mb-3">Bölüm Medyaları</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5">
+              <!-- LEFT: chapter list -->
+              <div class="border border-border rounded-md overflow-hidden bg-card">
+                <div class="px-4 py-2.5 border-b border-border bg-muted/30">
+                  <span class="text-sm font-medium text-muted-foreground">Bölümler</span>
+                </div>
+                <ul id="chapter-list" class="flex flex-col divide-y divide-border max-h-[70vh] overflow-y-auto">
+                  <!-- filled by JS -->
+                </ul>
+              </div>
+
+              <!-- RIGHT: media grid for selected chapter -->
+              <div class="flex flex-col">
+                <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                  <div class="flex items-center gap-2">
+                    <h4 id="chapter-media-title" class="text-sm font-semibold text-foreground">Bir bölüm seçin</h4>
+                  </div>
+                  <div class="flex gap-1 kt-btn-group" role="tablist">
+                    <button type="button" data-media-tab="images" class="media-tab kt-btn kt-btn-sm kt-btn-primary">
+                      <i class="ki-filled ki-picture"></i>
+                      Görseller (<span id="media-count-images">0</span>)
+                    </button>
+                    <button type="button" data-media-tab="videos" class="media-tab kt-btn kt-btn-sm kt-btn-outline">
+                      <i class="ki-filled ki-video"></i>
+                      Videolar (<span id="media-count-videos">0</span>)
+                    </button>
+                  </div>
+                </div>
+                <div id="gallery-dropzone" class="border-2 border-dashed border-border rounded-md p-4 mb-4 text-center cursor-pointer hover:bg-muted/30">
+                  <i class="ki-filled ki-cloud-add text-[32px] text-muted-foreground"></i>
+                  <p class="text-sm mt-2"><span id="upload-kind-label">Görseller</span> için sürükle-bırak veya tıkla</p>
+                  <p class="text-xs text-muted-foreground">JPG, PNG, WebP · MP4, WebM · MOV</p>
+                  <input type="file" id="gallery-input" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime" multiple class="hidden"/>
+                </div>
+                <div id="gallery-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3"></div>
+                <p id="gallery-empty" class="hidden text-sm text-muted-foreground text-center py-10">Bu kategoride medya yok.</p>
+              </div>
             </div>
-            <div id="gallery-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"></div>
           </section>
+
+          <!-- Media detail modal -->
+          <div id="media-modal" class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" role="dialog">
+            <div class="bg-background border border-border rounded-lg max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+              <div class="flex items-center justify-between px-5 py-3 border-b border-border">
+                <h4 class="text-base font-semibold" id="media-modal-title">Medya Detayı</h4>
+                <button type="button" id="media-modal-close" class="kt-btn kt-btn-icon kt-btn-ghost">
+                  <i class="ki-filled ki-cross"></i>
+                </button>
+              </div>
+              <div class="flex-1 overflow-auto">
+                <div id="media-modal-preview" class="bg-muted/20 flex items-center justify-center min-h-[300px] p-4"></div>
+                <div class="p-5 grid gap-4">
+                  <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+                    <label class="kt-form-label max-w-56">URL</label>
+                    <input id="media-modal-url" class="kt-input text-xs" readonly/>
+                  </div>
+                  <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+                    <label class="kt-form-label max-w-56">Başlık</label>
+                    <input id="media-modal-title-input" class="kt-input" placeholder="Opsiyonel başlık"/>
+                  </div>
+                  <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+                    <label class="kt-form-label max-w-56">Alt Metin</label>
+                    <input id="media-modal-alt" class="kt-input" placeholder="Alt / etiket"/>
+                  </div>
+                  <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+                    <label class="kt-form-label max-w-56">Sıra (order)</label>
+                    <input id="media-modal-order" type="number" class="kt-input"/>
+                  </div>
+                  <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+                    <label class="kt-form-label max-w-56">Durum</label>
+                    <label class="kt-label flex items-center gap-2">
+                      <input type="checkbox" id="media-modal-hidden" class="kt-checkbox"/>
+                      <span class="kt-checkbox-label">Gizli (client'ta gösterme)</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center justify-between px-5 py-3 border-t border-border bg-muted/10">
+                <button type="button" id="media-modal-delete" class="kt-btn kt-btn-sm kt-btn-destructive">
+                  <i class="ki-filled ki-trash"></i> Sil
+                </button>
+                <div class="flex gap-2">
+                  <button type="button" id="media-modal-cancel" class="kt-btn kt-btn-sm kt-btn-outline">İptal</button>
+                  <button type="button" id="media-modal-save" class="kt-btn kt-btn-sm kt-btn-primary">Kaydet</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="tab-panel hidden" data-tab="settings">
@@ -171,6 +252,6 @@
 
 <script src="/panel-assets/js/stories-edit.js"></script>
 <script src="/panel-assets/js/stories-chapters.js"></script>
-<script src="/panel-assets/js/stories-image-upload.js"></script>
+<script src="/panel-assets/js/stories-chapter-media.js"></script>
 
 <%- include('../partials/shell-footer') %>
