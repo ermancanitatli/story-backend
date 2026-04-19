@@ -41,6 +41,8 @@
 
 import { MongoClient, ObjectId } from 'mongodb';
 import { io as ioClient, Socket } from 'socket.io-client';
+import * as fs from 'fs';
+import * as path from 'path';
 
 type ApiHeaders = Record<string, string>;
 
@@ -78,6 +80,35 @@ const MAX_STEPS_PER_CHAPTER = 10;
 if (!STORY_ID) {
   console.error('[test] STORY_ID env zorunlu.');
   process.exit(1);
+}
+
+// === TXT LOG ===
+const LOG_DIR = path.join(process.cwd(), 'scripts', 'test-logs');
+fs.mkdirSync(LOG_DIR, { recursive: true });
+const LOG_TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+const LOG_FILE = path.join(LOG_DIR, `test-${MODE}-${LOG_TIMESTAMP}.txt`);
+
+function logLine(line: string = '') {
+  fs.appendFileSync(LOG_FILE, line + '\n', 'utf8');
+}
+function logSection(title: string) {
+  logLine('');
+  logLine('═'.repeat(100));
+  logLine(`  ${title}`);
+  logLine('═'.repeat(100));
+}
+function logChoice(choice: any, idx: number, picked: boolean = false) {
+  const marker = picked ? '▶ ' : '  ';
+  const text = extractChoiceText(choice) || '(boş)';
+  const id = choice?.id ?? idx + 1;
+  const type = choice?.type ?? '?';
+  logLine(`  ${marker}[${id}] (${type}) ${text}`);
+}
+
+// Console + file'a aynı anda yazmak için
+function dualLog(line: string) {
+  console.log(line);
+  logLine(line);
 }
 
 // Basit deterministic RNG (LCG) — SEED varsa tekrarlanabilir
@@ -266,6 +297,13 @@ async function runSinglePlayer() {
   const rows: StepRow[] = [];
   let lastProgress: any = firstProgress;
 
+  // TXT log header
+  logLine(`SINGLE PLAYER TEST LOG — ${new Date().toISOString()}`);
+  logLine(`PLAYER=${PLAYER_NAME} (${PLAYER_GENDER}, ${LANGUAGE})`);
+  logLine(`STORY=${storyTitle} (sid=${sessionId}) totalChapters=${totalChapters}`);
+  logLine(`MAX_STEPS=${MAX_STEPS}`);
+  console.log(`[log] TXT: ${LOG_FILE}`);
+
   const pushRow = (progress: any, stepNum: number, choiceTaken?: string) => {
     const row: StepRow = {
       step: stepNum,
@@ -282,7 +320,35 @@ async function runSinglePlayer() {
     console.log(formatRow(row));
   };
 
+  // TXT: ilk sahne detaylı
+  const writeTurnToLog = (stepNum: number, progress: any, choicePicked?: any, choicePickText?: string) => {
+    logSection(
+      `STEP ${stepNum} — chapter ${progress.currentChapter || 1}${progress.isChapterTransition ? ' [CHAPTER GEÇİŞİ]' : ''}`,
+    );
+    if (choicePicked !== undefined) {
+      logLine(`► ${PLAYER_NAME} SEÇTİ:`);
+      logLine(`  [${choicePicked.id || '?'}] (${choicePicked.type || '?'}) "${choicePickText}"`);
+      logLine('');
+    }
+    logLine(`◆ Sahne (${LANGUAGE}):`);
+    logLine(`  ${progress.currentScene || '(boş)'}`);
+    logLine('');
+    logLine(`▷ Sıradaki seçenekler:`);
+    (progress.choices || []).forEach((c: any, i: number) => logChoice(c, i, false));
+    const sug =
+      progress?.effects?.suggestChapterTransition === true
+        ? 'YES'
+        : progress?.effects?.suggestChapterTransition === false
+          ? 'no'
+          : '???';
+    logLine('');
+    logLine(
+      `  [backend] suggest=${sug}  transition=${progress.isChapterTransition ? 'YES' : 'no'}  ch.step=${progress.chapterStepCount || 0}`,
+    );
+  };
+
   pushRow(firstProgress, 1);
+  writeTurnToLog(1, firstProgress);
 
   // 3) Loop
   for (let step = 2; step <= MAX_STEPS; step++) {
@@ -340,6 +406,7 @@ async function runSinglePlayer() {
         headers,
       );
       pushRow(lastProgress, step, choiceText);
+      writeTurnToLog(step, lastProgress, { id: pick.id || pickIdx + 1, type: pick.type }, choiceText);
 
       // Rolling summary inspection — her 5 step'te bir DB'den kontrol
       // (async summary fire-and-forget olduğu için 2 saniye bekle, propagation)
@@ -714,6 +781,14 @@ async function runMultiplayer() {
   const turnLogs: Array<{ turn: number; activeId: string; chapter: number; suggest?: boolean; transition: boolean; scene: string }> = [];
   let currentActiveId: string = session.activePlayerId;
 
+  // === TXT LOG HEADER ===
+  logLine(`MULTIPLAYER TEST LOG — ${new Date().toISOString()}`);
+  logLine(`HOST=${host.name} (${host.gender}, ${host.language})`);
+  logLine(`GUEST=${guest.name} (${guest.gender}, ${guest.language})`);
+  logLine(`STORY=${storyTitle} (sid=${sessionId})`);
+  logLine(`MAX_STEPS=${MAX_STEPS}`);
+  console.log(`[log] TXT: ${LOG_FILE}`);
+
   // İlk progress çek — ilk sahne async üretilebilir, biraz bekle
   let lastProgress: any = null;
   for (let attempt = 0; attempt < 15; attempt++) {
@@ -740,14 +815,26 @@ async function runMultiplayer() {
     scene: lastProgress?.currentScene || '',
   });
   const firstActiveLabel = currentActiveId === host.userId ? 'HOST' : 'GUEST';
+  const firstActivePlayer = currentActiveId === host.userId ? host : guest;
+
   console.log(
     `  ${String(firstTurn).padStart(3)}  ${firstActiveLabel.padEnd(5)}    ${String(lastProgress?.currentChapter || 1).padStart(2)}    -          ${truncate(lastProgress?.currentScene, 100)}`,
   );
+
+  // TXT — ilk sahne detaylı
+  logSection(`TURN 1 — OPENING SCENE (aktif: ${firstActivePlayer.name})`);
+  logLine(`  [${firstActivePlayer.name} (${firstActivePlayer.language}) bu sahneyi görüyor]`);
+  logLine('');
+  logLine(`  ${lastProgress.currentScene}`);
+  logLine('');
+  logLine(`  Seçenekler (${firstActivePlayer.name} için):`);
+  (lastProgress.choices || []).forEach((c: any, i: number) => logChoice(c, i, false));
 
   // Turn döngüsü
   for (let turnNum = firstTurn + 1; turnNum <= MAX_STEPS; turnNum++) {
     const isHostTurn = currentActiveId === host.userId;
     const activePlayer = isHostTurn ? host : guest;
+    const otherPlayer = isHostTurn ? guest : host;
     const activeLabel = isHostTurn ? 'HOST' : 'GUEST';
 
     // Aktif oyuncu son progress'i kendi dilinde çeker
@@ -765,6 +852,7 @@ async function runMultiplayer() {
 
     if (lastProgress?.isEnding) {
       console.log('[loop] isEnding=true — story ended');
+      logLine(`\n[HIKAYE SONA ERDİ]`);
       break;
     }
 
@@ -774,6 +862,7 @@ async function runMultiplayer() {
       .filter((x: any) => x.text);
     if (validChoices.length === 0) {
       console.error(`[turn ${turnNum}] tüm choice'lar bozuk: ${JSON.stringify(choices).substring(0, 200)}`);
+      logLine(`\n[HATA] Turn ${turnNum}: tüm choice'lar bozuk`);
       break;
     }
     const pick = validChoices[Math.floor(rand() * validChoices.length)];
@@ -801,15 +890,62 @@ async function runMultiplayer() {
         `  ${String(turnNum).padStart(3)}  ${activeLabel.padEnd(5)}    ${String(result?.currentChapter || 1).padStart(2)}    ${sug.padEnd(4)}  ${tr}  ${end}  ${truncate(result?.currentScene, 100)}`,
       );
 
-      // Turn swap — server yaptı, biz sadece takip ediyoruz
-      // activePlayerId response'ta dönmüyor — session'dan tekrar çek
+      // === TXT — Detaylı turn log ===
+      logSection(`TURN ${turnNum} — aktif: ${activePlayer.name} (${activePlayer.language})${result?.isChapterTransition ? ' [CHAPTER ' + (result.currentChapter) + "'e GEÇİŞ]" : ''}`);
+
+      // 1. Aktif oyuncunun seçtiği
+      logLine(`► ${activePlayer.name} SEÇTİ:`);
+      logLine(`  [${pick.c.id || pick.idx + 1}] (${pick.c.type || '?'}) "${pick.text}"`);
+      logLine('');
+
+      // 2. Yeni sahne — İKİ TARAF da ayrı dil görüyor
+      logLine(`◆ ${activePlayer.name}'nın (${activePlayer.language}) gördüğü sahne:`);
+      logLine(`  ${result?.currentScene || '(boş)'}`);
+      logLine('');
+
+      // Karşı oyuncunun dilinde de aynı sahneyi çek (bilingual için)
+      if (host.language !== guest.language) {
+        try {
+          const otherProgress: any = await call(
+            'GET',
+            `/api/multiplayer/${sessionId}/progress`,
+            undefined,
+            otherPlayer.headers,
+          );
+          logLine(`◆ ${otherPlayer.name}'nın (${otherPlayer.language}) gördüğü sahne:`);
+          logLine(`  ${otherProgress?.currentScene || '(boş)'}`);
+          logLine('');
+        } catch {}
+      }
+
+      // 3. Sonraki oyuncunun önündeki choice'lar
+      //    Backend turn swap yaptı → bir sonraki aktif oyuncu choice'ları görecek
+      //    Session'dan nextActiveId al, onun dilindeki choice'ları çek
+      let nextActiveId = isHostTurn ? guest.userId : host.userId;
       if (turnNum % 3 === 0 || result?.isChapterTransition) {
         const sess = await call('GET', `/api/multiplayer/${sessionId}`, undefined, host.headers);
-        currentActiveId = sess.activePlayerId;
-      } else {
-        // Tahmin: basit swap
-        currentActiveId = isHostTurn ? guest.userId : host.userId;
+        nextActiveId = sess.activePlayerId;
       }
+      const nextActivePlayer = nextActiveId === host.userId ? host : guest;
+      logLine(`▷ Şimdi sıra ${nextActivePlayer.name}'da — ona gösterilen ${nextActivePlayer.language.toUpperCase()} seçenekler:`);
+      try {
+        const nextProgress: any = await call(
+          'GET',
+          `/api/multiplayer/${sessionId}/progress`,
+          undefined,
+          nextActivePlayer.headers,
+        );
+        (nextProgress?.choices || []).forEach((c: any, i: number) => logChoice(c, i, false));
+      } catch (err) {
+        logLine(`  (seçenekler çekilemedi: ${(err as Error).message})`);
+      }
+
+      if (result?.isChapterTransition || result?.effects?.suggestChapterTransition !== undefined) {
+        logLine('');
+        logLine(`  [backend] suggest=${sug.trim()}  transition=${result?.isChapterTransition ? 'YES' : 'no'}  chapter=${result?.currentChapter}`);
+      }
+
+      currentActiveId = nextActiveId;
 
       // Özet inspection
       if (mongoClient && turnNum % 5 === 0) {

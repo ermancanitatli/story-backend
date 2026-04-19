@@ -44,3 +44,6 @@ e2e/artifacts/
 
 # Docker
 docker/mongo/keyfile
+
+# Test script logları
+scripts/test-logs/
