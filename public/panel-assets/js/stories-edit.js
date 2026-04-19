@@ -1,16 +1,85 @@
 (function() {
-  const STORY_ID = window.location.pathname.match(/\/panel\/stories\/([^\/]+)\/edit/)?.[1];
-  const IS_NEW = window.location.pathname.endsWith('/stories/new');
+  let STORY_ID = window.location.pathname.match(/\/panel\/stories\/([^\/]+)\/edit/)?.[1];
+  let IS_NEW = window.location.pathname.endsWith('/stories/new');
 
-  let dirty = false;
-  const banner = document.getElementById('dirty-banner');
+  // ===== Debounced inline save =====
+  const PATCH_DEBOUNCE_MS = 600;
+  const patchTimers = new Map(); // key => timerId
 
-  function setDirty(v) {
-    dirty = v;
-    banner.classList.toggle('hidden', !v);
+  function showSavedToast() {
+    const t = window.panelToast;
+    if (!t) return;
+    if (typeof t.info === 'function') t.info('✓ Kaydedildi', { duration: 800 });
+    else if (typeof t.success === 'function') t.success('✓ Kaydedildi', { duration: 800 });
   }
 
-  // Tab switch
+  function showErrorToast(err) {
+    const msg = err?.body?.message || err?.message || 'Bilinmeyen hata';
+    window.panelToast?.error?.(`Kaydedilemedi: ${msg}`);
+  }
+
+  // Her alan için ayrı debounce timer'ı; field bazlı debounce
+  function scheduleFieldPatch(key, bodyBuilder) {
+    if (!STORY_ID || IS_NEW) return;
+    const existing = patchTimers.get(key);
+    if (existing) clearTimeout(existing);
+    const t = setTimeout(async () => {
+      patchTimers.delete(key);
+      try {
+        const body = typeof bodyBuilder === 'function' ? bodyBuilder() : bodyBuilder;
+        if (!body || Object.keys(body).length === 0) return;
+        await window.panelApi.patch(`/panel/api/stories/${STORY_ID}`, body);
+        showSavedToast();
+      } catch (err) {
+        console.error('[stories-edit] patch failed', key, err);
+        showErrorToast(err);
+      }
+    }, PATCH_DEBOUNCE_MS);
+    patchTimers.set(key, t);
+  }
+
+  function patchField(key, value) {
+    scheduleFieldPatch(key, () => ({ [key]: value }));
+  }
+
+  function patchFieldMany(keyGroup, body) {
+    // keyGroup: unique debounce bucket key (ör: 'translations')
+    scheduleFieldPatch(keyGroup, () => body);
+  }
+
+  // ===== IS_NEW: create-on-first-change =====
+  let creatingStory = false;
+  async function ensureStoryExistsThenContinue() {
+    if (STORY_ID && !IS_NEW) return true;
+    if (creatingStory) return false;
+
+    const enTitle = document.getElementById('f-title')?.value?.trim() || window.__story?.translations?.en?.title?.trim() || '';
+    if (!enTitle) {
+      window.panelToast?.warn?.('Önce EN başlığı girin') || window.panelToast?.info?.('Önce EN başlığı girin');
+      return false;
+    }
+
+    creatingStory = true;
+    try {
+      const payload = {
+        translations: { en: { title: enTitle } },
+        genre: window.__story?.genre || 'other',
+        isPaid: !!window.__story?.isPaid,
+      };
+      const created = await window.panelApi.post('/panel/api/stories', payload);
+      window.panelToast?.success?.('Hikaye oluşturuldu, düzenleme devam ediyor');
+      // redirect — sayfa yenilendikten sonra inline save STORY_ID ile çalışır
+      window.location.replace(`/panel/stories/${created._id}/edit`);
+      return true;
+    } catch (err) {
+      console.error('[stories-edit] create failed', err);
+      showErrorToast(err);
+      creatingStory = false;
+      return false;
+    }
+  }
+
+  // ===== Tab switch =====
   document.querySelectorAll('.tab').forEach(btn => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.tab;
@@ -26,23 +95,10 @@
     });
   });
 
-  // Dirty tracking on any input change inside tab panels
-  document.addEventListener('input', e => {
-    if (e.target.closest('.tab-panel')) setDirty(true);
-  });
-
-  // beforeunload
-  window.addEventListener('beforeunload', e => {
-    if (dirty) {
-      e.preventDefault();
-      e.returnValue = '';
-    }
-  });
-
-  // Load existing story data
+  // ===== Load existing story data =====
   if (STORY_ID && !IS_NEW) {
     window.panelApi.get(`/panel/api/stories/${STORY_ID}`).then(story => {
-      window.__story = story; // sub-tabs buradan okusun
+      window.__story = story;
     }).catch(() => {
       window.panelToast?.error('Hikaye yüklenemedi');
     });
@@ -50,33 +106,7 @@
     window.__story = {};
   }
 
-  // Save handler - payload aggregator (sub-tabs kendi alanlarını window.__story'ye yazar)
-  async function save(asDraft = false) {
-    if (!window.__story) return;
-    const payload = { ...window.__story };
-    if (asDraft) payload.isPublished = false;
-    const saveBtn = document.getElementById('save-btn');
-    saveBtn.disabled = true;
-    try {
-      if (IS_NEW) {
-        const created = await window.panelApi.post('/panel/api/stories', payload);
-        window.panelToast?.success('Oluşturuldu');
-        setDirty(false);
-        setTimeout(() => window.location.href = `/panel/stories/${created._id}/edit`, 800);
-      } else {
-        await window.panelApi.patch(`/panel/api/stories/${STORY_ID}`, payload);
-        window.panelToast?.success('Kaydedildi');
-        setDirty(false);
-      }
-    } catch {
-    } finally {
-      saveBtn.disabled = false;
-    }
-  }
-  document.getElementById('save-btn').addEventListener('click', () => save(false));
-  document.getElementById('draft-btn').addEventListener('click', () => save(true));
-
-  // ===== Settings tab (STORY-16): tags + SEO + metadata =====
+  // ===== Settings tab: tags + SEO + metadata =====
   function renderTags(tags) {
     const wrapper = document.getElementById('tags-wrapper');
     const input = document.getElementById('tags-input');
@@ -89,6 +119,7 @@
       chip.querySelector('button').addEventListener('click', () => {
         window.__story.tags = (window.__story.tags || []).filter(t => t !== tag);
         renderTags(window.__story.tags);
+        patchField('tags', window.__story.tags);
       });
       wrapper.insertBefore(chip, input);
     });
@@ -100,19 +131,27 @@
       const val = e.target.value.trim().replace(/,/g, '');
       if (val && window.__story) {
         window.__story.tags = window.__story.tags || [];
-        if (!window.__story.tags.includes(val)) window.__story.tags.push(val);
+        if (!window.__story.tags.includes(val)) {
+          window.__story.tags.push(val);
+          patchField('tags', window.__story.tags);
+        }
         e.target.value = '';
         renderTags(window.__story.tags);
       }
     }
   });
 
-  ['f-meta-title','f-meta-description','f-internal-notes'].forEach(id => {
+  const SETTINGS_FIELDS = {
+    'f-meta-title': 'metaTitle',
+    'f-meta-description': 'metaDescription',
+    'f-internal-notes': 'internalNotes',
+  };
+  Object.entries(SETTINGS_FIELDS).forEach(([id, key]) => {
     document.getElementById(id)?.addEventListener('input', () => {
       if (!window.__story) return;
       const val = document.getElementById(id).value;
-      const key = { 'f-meta-title': 'metaTitle', 'f-meta-description': 'metaDescription', 'f-internal-notes': 'internalNotes' }[id];
       window.__story[key] = val;
+      patchField(key, val);
     });
   });
 
@@ -128,7 +167,7 @@
   setTimeout(() => { if (window.__story) applyStoryToSettings(); }, 500);
   setTimeout(() => { if (window.__story) applyStoryToSettings(); }, 1500);
 
-  // ===== Basic tab (STORY-11): multi-locale title/summary + metadata =====
+  // ===== Basic tab: multi-locale title/summary + metadata =====
   const LOCALES = ['en','tr','ar','de','es','fr','it','ja','ko','pt','ru','zh'];
   let currentLocale = 'en';
 
@@ -150,43 +189,86 @@
     document.querySelectorAll('.locale-label').forEach(el => el.textContent = locale.toUpperCase());
   }
 
-  function captureLocale() {
+  function captureLocaleToStory() {
     if (!window.__story) return;
     window.__story.translations = window.__story.translations || {};
+    const tTitle = document.getElementById('f-title').value;
+    const tSummary = document.getElementById('f-summary').value;
+    const tSummarySafe = document.getElementById('f-summary-safe').value;
     window.__story.translations[currentLocale] = {
-      title: document.getElementById('f-title').value,
-      summary: document.getElementById('f-summary').value,
-      summarySafe: document.getElementById('f-summary-safe').value,
+      title: tTitle,
+      summary: tSummary,
+      summarySafe: tSummarySafe,
     };
-    // EN değişince flat title/summary de güncelle (backend compat)
     if (currentLocale === 'en') {
-      window.__story.title = document.getElementById('f-title').value;
-      window.__story.summary = document.getElementById('f-summary').value;
-      window.__story.summarySafe = document.getElementById('f-summary-safe').value;
+      window.__story.title = tTitle;
+      window.__story.summary = tSummary;
+      window.__story.summarySafe = tSummarySafe;
     }
   }
 
+  function patchCurrentLocale() {
+    if (!window.__story) return;
+    const body = { translations: window.__story.translations };
+    if (currentLocale === 'en') {
+      body.title = window.__story.title || '';
+      body.summary = window.__story.summary || '';
+      body.summarySafe = window.__story.summarySafe || '';
+    }
+    patchFieldMany('translations', body);
+  }
+
   document.getElementById('locale-select')?.addEventListener('change', e => {
-    captureLocale();
+    captureLocaleToStory();
+    // switch locale — önceki locale için bekleyen patch hâlâ timer'da; bırak son halini göndersin
     loadLocale(e.target.value);
     renderBadges(window.__story);
   });
 
   ['f-title','f-summary','f-summary-safe'].forEach(id => {
-    document.getElementById(id)?.addEventListener('input', () => {
-      captureLocale();
+    document.getElementById(id)?.addEventListener('input', async () => {
+      if (IS_NEW && !STORY_ID) {
+        // EN title dolu ise create flow'u tetikle (yalnızca f-title için anlamlı)
+        if (id === 'f-title') {
+          // create-on-first-change — redirect yapacak
+          const ok = await ensureStoryExistsThenContinue();
+          if (!ok) return;
+        }
+        return;
+      }
+      captureLocaleToStory();
       renderBadges(window.__story);
+      patchCurrentLocale();
     });
   });
 
-  ['f-genre','f-difficulty','f-age','f-credit-cost','f-is-paid','f-is-published'].forEach(id => {
+  const BASIC_META_FIELDS = {
+    'f-genre': 'genre',
+    'f-difficulty': 'difficulty',
+    'f-age': 'ageRating',
+    'f-credit-cost': 'creditCost',
+    'f-is-paid': 'isPaid',
+    'f-is-published': 'isPublished',
+  };
+  Object.entries(BASIC_META_FIELDS).forEach(([id, key]) => {
     const el = document.getElementById(id);
     if (!el) return;
     const handler = () => {
       if (!window.__story) return;
-      const val = el.type === 'checkbox' ? el.checked : el.value;
-      const key = { 'f-genre': 'genre', 'f-difficulty': 'difficulty', 'f-age': 'ageRating', 'f-credit-cost': 'creditCost', 'f-is-paid': 'isPaid', 'f-is-published': 'isPublished' }[id];
-      window.__story[key] = id === 'f-credit-cost' ? parseFloat(val) || 0 : val;
+      let val;
+      if (el.type === 'checkbox') {
+        val = el.checked;
+      } else if (id === 'f-credit-cost') {
+        val = parseFloat(el.value);
+        if (isNaN(val)) val = 0;
+      } else if (id === 'f-difficulty') {
+        val = el.value === '' ? null : el.value;
+      } else {
+        val = el.value;
+      }
+      window.__story[key] = val;
+      if (IS_NEW && !STORY_ID) return; // yeni hikaye henüz create edilmedi; lokalde tut
+      patchField(key, val);
     };
     el.addEventListener('input', handler);
     el.addEventListener('change', handler);

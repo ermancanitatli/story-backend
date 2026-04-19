@@ -2,14 +2,8 @@
 <div class="flex items-center justify-between mb-5">
   <h1 class="text-2xl font-semibold"><%= isNew ? 'Yeni Hikaye' : 'Hikaye Düzenle' %></h1>
   <div class="flex gap-2">
-    <button id="cancel-btn" class="kt-btn kt-btn-outline" onclick="history.back()">İptal</button>
-    <button id="draft-btn" class="kt-btn kt-btn-outline">Taslak Kaydet</button>
-    <button id="save-btn" class="kt-btn kt-btn-primary">Kaydet</button>
+    <button id="cancel-btn" class="kt-btn kt-btn-outline" onclick="history.back()">Geri</button>
   </div>
-</div>
-
-<div id="dirty-banner" class="hidden mb-4 px-4 py-2 rounded-md border border-warning/20 bg-warning/10 text-warning text-sm">
-  Kaydedilmemiş değişiklikler var.
 </div>
 
 <div class="kt-card">
