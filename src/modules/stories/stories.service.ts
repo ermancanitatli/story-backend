@@ -197,6 +197,68 @@ export class StoriesService {
     return this.storyModel.create(copy);
   }
 
+  // -------------------------------------------------------------------------
+  // Image management (STORY-07)
+  // -------------------------------------------------------------------------
+
+  async addImage(
+    storyId: string,
+    image: {
+      url: string;
+      thumbnail?: string;
+      title?: string;
+      alt?: string;
+      type: 'cover' | 'gallery';
+    },
+  ): Promise<Story> {
+    const field = image.type === 'cover' ? 'coverImage' : 'galleryImages';
+    const { randomUUID } = await import('crypto');
+    const newItem = {
+      _id: randomUUID(),
+      url: image.url,
+      thumbnail: image.thumbnail,
+      title: image.title,
+      alt: image.alt,
+      order: 0,
+    };
+    const updated = await this.storyModel
+      .findByIdAndUpdate(storyId, { $push: { [field]: newItem } }, { new: true })
+      .lean()
+      .exec();
+    if (!updated) throw new NotFoundException('Story not found');
+    return updated as unknown as Story;
+  }
+
+  async deleteImage(
+    storyId: string,
+    imageIndex: number,
+    type: 'cover' | 'gallery',
+  ): Promise<void> {
+    const field = type === 'cover' ? 'coverImage' : 'galleryImages';
+    const story = await this.storyModel.findById(storyId).exec();
+    if (!story) throw new NotFoundException('Story not found');
+    const arr = ((story as any)[field] || []).slice();
+    arr.splice(imageIndex, 1);
+    await this.storyModel
+      .findByIdAndUpdate(storyId, { $set: { [field]: arr } })
+      .exec();
+  }
+
+  async reorderImages(
+    storyId: string,
+    type: 'cover' | 'gallery',
+    orderedIndexes: number[],
+  ): Promise<void> {
+    const field = type === 'cover' ? 'coverImage' : 'galleryImages';
+    const story = await this.storyModel.findById(storyId).lean().exec();
+    if (!story) throw new NotFoundException('Story not found');
+    const arr = (story as any)[field] || [];
+    const reordered = orderedIndexes.map((i) => arr[i]).filter(Boolean);
+    await this.storyModel
+      .findByIdAndUpdate(storyId, { $set: { [field]: reordered } })
+      .exec();
+  }
+
   /**
    * Aktif oturum sayısı — admin arayüzünde silme uyarısı için kullanılır.
    */

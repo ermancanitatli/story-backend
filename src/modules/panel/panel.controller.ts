@@ -295,6 +295,45 @@ export class PanelController {
     };
   }
 
+  @Get('stories/new')
+  @UseGuards(SessionAuthGuard)
+  @Render('panel/stories/edit')
+  newStory(@Req() req: Request & { session: PanelSession }) {
+    return {
+      title: 'Yeni Hikaye',
+      currentPath: req.path,
+      username: req.session?.username,
+      breadcrumbs: [
+        { label: 'Hikayeler', href: '/panel/stories' },
+        { label: 'Yeni' },
+      ],
+      story: null,
+      storyId: null,
+      isNew: true,
+    };
+  }
+
+  @Get('stories/:id/edit')
+  @UseGuards(SessionAuthGuard)
+  @Render('panel/stories/edit')
+  editStory(
+    @Param('id') id: string,
+    @Req() req: Request & { session: PanelSession },
+  ) {
+    return {
+      title: 'Hikaye Düzenle',
+      currentPath: req.path,
+      username: req.session?.username,
+      breadcrumbs: [
+        { label: 'Hikayeler', href: '/panel/stories' },
+        { label: 'Düzenle' },
+      ],
+      storyId: id,
+      story: null,
+      isNew: false,
+    };
+  }
+
   @Get('notifications')
   @Render('panel/notifications/composer')
   showNotifications(@Req() req: Request & { session: PanelSession }) {
@@ -316,6 +355,20 @@ export class PanelController {
         'pt',
         'ru',
         'zh',
+      ],
+    };
+  }
+
+  @Get('notifications/history')
+  @Render('panel/notifications/history')
+  showNotificationHistory(@Req() req: Request & { session: PanelSession }) {
+    return {
+      title: 'Bildirim Geçmişi',
+      currentPath: req.path,
+      username: req.session?.username || 'Admin',
+      breadcrumbs: [
+        { label: 'Bildirimler', href: '/panel/notifications' },
+        { label: 'Geçmiş' },
       ],
     };
   }

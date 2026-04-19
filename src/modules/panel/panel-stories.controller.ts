@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -90,5 +91,39 @@ export class PanelStoriesController {
     );
 
     return { uploadUrl, publicUrl, imageId, path };
+  }
+
+  @Post(':id/images')
+  addImage(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      url: string;
+      thumbnail?: string;
+      title?: string;
+      alt?: string;
+      type: 'cover' | 'gallery';
+    },
+  ) {
+    return this.stories.addImage(id, body);
+  }
+
+  @Delete(':id/images/:index')
+  async deleteImage(
+    @Param('id') id: string,
+    @Param('index') index: string,
+    @Query('type') type: 'cover' | 'gallery' = 'gallery',
+  ) {
+    await this.stories.deleteImage(id, parseInt(index, 10), type);
+    return { deleted: true };
+  }
+
+  @Put(':id/images/order')
+  async reorderImages(
+    @Param('id') id: string,
+    @Body() body: { type: 'cover' | 'gallery'; orderedIndexes: number[] },
+  ) {
+    await this.stories.reorderImages(id, body.type, body.orderedIndexes);
+    return { reordered: true };
   }
 }

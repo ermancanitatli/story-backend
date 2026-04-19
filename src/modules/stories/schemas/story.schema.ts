@@ -23,11 +23,17 @@ export class StoryCharacter {
 
 @Schema({ _id: false })
 export class MediaItem {
+  @Prop()
+  _id?: string;
+
   @Prop({ default: 0 })
   order: number;
 
   @Prop()
   title?: string;
+
+  @Prop()
+  alt?: string;
 
   @Prop({ required: true })
   url: string;
