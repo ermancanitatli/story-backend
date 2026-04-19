@@ -141,6 +141,12 @@ export class Story extends Document {
   @Prop({ default: false })
   ownerDeleted: boolean;
 
+  @Prop({ default: false })
+  isPublished: boolean;
+
+  @Prop({ type: [String], default: [] })
+  tags: string[];
+
   @Prop()
   legacyFirestoreId?: string; // Geçiş dönemi — eski Firestore doc ID
 }
@@ -153,3 +159,6 @@ StorySchema.index({ isPaid: 1 });
 StorySchema.index({ createdAt: -1 });
 StorySchema.index({ userId: 1 });
 StorySchema.index({ legacyFirestoreId: 1 }, { sparse: true });
+// CC-11 — publish listesi için compound index ve tag araması için multikey index
+StorySchema.index({ isPublished: 1, genre: 1, createdAt: -1 });
+StorySchema.index({ tags: 1 });

@@ -118,7 +118,7 @@ export class User extends Document {
   @Prop({ required: true, unique: true, index: true })
   deviceId: string;
 
-  @Prop()
+  @Prop({ sparse: true, unique: true, index: true })
   email?: string;
 
   @Prop()
