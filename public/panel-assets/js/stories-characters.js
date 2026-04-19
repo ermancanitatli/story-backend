@@ -4,6 +4,27 @@
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]),
     );
 
+  const STORY_ID = window.location.pathname.match(/\/panel\/stories\/([^\/]+)\/edit/)?.[1];
+  const PATCH_DEBOUNCE_MS = 600;
+  let patchTimer = null;
+
+  function persistCharacters() {
+    if (!STORY_ID) return;
+    clearTimeout(patchTimer);
+    patchTimer = setTimeout(async () => {
+      try {
+        await window.panelApi.patch(`/panel/api/stories/${STORY_ID}`, {
+          characters: window.__story?.characters || [],
+        });
+      } catch (err) {
+        console.error(err);
+        window.panelToast?.error(
+          `Karakter kaydedilemedi: ${err?.body?.message || err.message}`,
+        );
+      }
+    }, PATCH_DEBOUNCE_MS);
+  }
+
   function renderCharacters() {
     const container = document.getElementById('characters-list');
     const empty = document.getElementById('characters-empty');
@@ -102,10 +123,12 @@
         el?.addEventListener('input', (e) => {
           if (!window.__story?.characters?.[ci]) return;
           window.__story.characters[ci][key] = e.target.value;
+          persistCharacters();
         });
         el?.addEventListener('change', (e) => {
           if (!window.__story?.characters?.[ci]) return;
           window.__story.characters[ci][key] = e.target.value;
+          persistCharacters();
         });
       };
       bindField('.char-name', 'name');
@@ -118,6 +141,7 @@
         if (!confirm('Karakter silinsin mi?')) return;
         window.__story.characters.splice(ci, 1);
         renderCharacters();
+        persistCharacters();
       });
 
       // Avatar upload
@@ -127,7 +151,6 @@
       avatarInput?.addEventListener('change', async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        const STORY_ID = window.location.pathname.match(/\/panel\/stories\/([^\/]+)\/edit/)?.[1];
         if (!STORY_ID) {
           window.panelToast?.error('Önce hikayeyi kaydet');
           return;
@@ -158,6 +181,7 @@
           });
           window.__story.characters[ci].avatarUrl = presign.publicUrl;
           renderCharacters();
+          persistCharacters();
           window.panelToast?.success('Avatar yüklendi');
         } catch (err) {
           console.error(err);
@@ -168,6 +192,7 @@
       card.querySelector('.char-avatar-remove')?.addEventListener('click', () => {
         window.__story.characters[ci].avatarUrl = undefined;
         renderCharacters();
+        persistCharacters();
       });
     });
   }
@@ -183,6 +208,7 @@
       description: '',
     });
     renderCharacters();
+    persistCharacters();
   });
 
   // __story yüklendiğinde render et
