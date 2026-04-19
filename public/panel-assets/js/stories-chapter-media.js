@@ -273,16 +273,15 @@
           : '';
         const inner = isVid
           ? `
-              <video src="${url}#t=0.5" ${thumb ? `poster="${thumb}"` : ''} class="w-full h-full object-cover bg-black" preload="metadata" muted playsinline></video>
+              <video src="${url}#t=0.5" ${thumb ? `poster="${thumb}"` : ''} style="max-height:600px;width:auto;max-width:100%;" class="object-contain bg-black block" preload="metadata" muted playsinline></video>
               <span class="absolute inset-0 flex items-center justify-center bg-black/25 group-hover:bg-black/10 transition pointer-events-none">
                 <i class="ki-filled ki-play text-white text-3xl drop-shadow-lg"></i>
               </span>
             `
-          : `<img src="${thumb || url}" alt="${esc(m.alt || '')}" class="w-full h-full object-cover" loading="lazy"/>`;
+          : `<img src="${thumb || url}" alt="${esc(m.alt || '')}" style="max-height:600px;width:auto;max-width:100%;" class="object-contain block" loading="lazy"/>`;
 
         return `
-          <div class="media-card group relative aspect-square rounded-lg border border-border overflow-hidden cursor-pointer hover:ring-2 ring-primary transition ${hidden ? 'opacity-50' : ''}"
-               style="max-height:600px;"
+          <div class="media-card group relative rounded-lg border border-border overflow-hidden cursor-pointer hover:ring-2 ring-primary transition ${hidden ? 'opacity-50' : ''} inline-block align-top"
                data-item-id="${esc(m._id || '')}" draggable="true">
             ${inner}
             ${hiddenBadge}
