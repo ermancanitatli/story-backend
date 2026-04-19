@@ -133,33 +133,34 @@
         </div>
       </div>
       <div class="tab-panel hidden" data-tab="settings">
-        <div class="flex flex-col gap-5">
-          <div>
-            <label class="kt-form-label">Etiketler</label>
-            <div id="tags-wrapper" class="border border-border rounded-md p-2 flex flex-wrap gap-2 min-h-[42px]">
-              <input id="tags-input" type="text" class="flex-1 min-w-[120px] outline-none text-sm" placeholder="Etiket yaz, Enter veya virgül"/>
-            </div>
-            <small class="text-xs text-muted-foreground">Enter veya virgül ile ekle.</small>
-          </div>
-
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="kt-form-label">Firestore Legacy ID (readonly)</label>
-              <input id="f-legacy-id" class="kt-input bg-muted/30" readonly/>
-            </div>
-            <div>
-              <label class="kt-form-label">SEO Başlık (EN)</label>
-              <input id="f-meta-title" class="kt-input"/>
+        <div class="grid gap-5">
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Etiketler</label>
+            <div class="flex flex-col gap-1 flex-1">
+              <div id="tags-wrapper" class="border border-border rounded-md p-2 flex flex-wrap gap-2 min-h-[42px]">
+                <input id="tags-input" type="text" class="flex-1 min-w-[120px] outline-none text-sm bg-transparent" placeholder="Etiket yaz, Enter veya virgül"/>
+              </div>
+              <small class="text-xs text-muted-foreground">Enter veya virgül ile ekle.</small>
             </div>
           </div>
 
-          <div>
-            <label class="kt-form-label">SEO Açıklama</label>
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Firestore Legacy ID</label>
+            <input id="f-legacy-id" class="kt-input bg-muted/30" readonly/>
+          </div>
+
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">SEO Başlık (EN)</label>
+            <input id="f-meta-title" class="kt-input"/>
+          </div>
+
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">SEO Açıklama</label>
             <textarea id="f-meta-description" class="kt-input" rows="2"></textarea>
           </div>
 
-          <div>
-            <label class="kt-form-label">Admin Notları (dahili)</label>
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Admin Notları (dahili)</label>
             <textarea id="f-internal-notes" class="kt-input" rows="3" placeholder="Sadece admin görür"></textarea>
           </div>
         </div>
