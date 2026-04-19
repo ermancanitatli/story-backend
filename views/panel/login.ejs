@@ -1,20 +1,18 @@
 <!DOCTYPE html>
 <html class="h-full" data-kt-theme="true" data-kt-theme-mode="light" dir="ltr" lang="tr">
 <head>
-  <base href="/panel-assets/">
   <title>Story Admin — Giriş</title>
   <meta charset="utf-8" />
   <meta name="robots" content="follow, index" />
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
   <meta name="description" content="Story Admin Panel giriş" />
-  <link rel="apple-touch-icon" sizes="180x180" href="media/app/apple-touch-icon.png" />
-  <link rel="icon" type="image/png" sizes="32x32" href="media/app/favicon-32x32.png" />
-  <link rel="icon" type="image/png" sizes="16x16" href="media/app/favicon-16x16.png" />
-  <link rel="shortcut icon" href="media/app/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/panel-assets/media/app/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/panel-assets/media/app/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/panel-assets/media/app/favicon-16x16.png" />
+  <link rel="shortcut icon" href="/panel-assets/media/app/favicon.ico" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
-  <link rel="stylesheet" href="vendors/keenicons/styles.bundle.css" />
-  <link rel="stylesheet" href="css/core.bundle.css" />
-  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="/panel-assets/vendors/keenicons/styles.bundle.css" />
+  <link rel="stylesheet" href="/panel-assets/css/styles.css" />
 </head>
 <body class="antialiased flex h-full text-base text-foreground bg-background">
   <!-- Theme Mode -->
@@ -36,100 +34,84 @@
     }
   </script>
   <style>
-    .branded-bg {
+    .page-bg {
       background-image: url('/panel-assets/media/images/2600x1600/1.png');
     }
-    .dark .branded-bg {
+    .dark .page-bg {
       background-image: url('/panel-assets/media/images/2600x1600/1-dark.png');
     }
   </style>
-  <div class="grid lg:grid-cols-2 grow">
-    <!-- Sol: Form -->
-    <div class="flex justify-center items-center p-8 lg:p-10 order-2 lg:order-1">
-      <div class="kt-card max-w-[370px] w-full">
-        <form class="kt-card-content flex flex-col gap-5 p-10" method="post" action="/panel/login" id="sign_in_form">
-          <div class="text-center mb-2.5">
-            <h3 class="text-lg font-medium text-mono leading-none mb-2.5">
-              Admin Girişi
-            </h3>
-            <div class="flex items-center justify-center font-medium">
-              <span class="text-sm text-secondary-foreground">
-                Story Backend yönetim paneli
-              </span>
-            </div>
-          </div>
-
-          <% if (typeof error !== 'undefined' && error) { %>
-            <div class="kt-alert kt-alert-destructive flex items-center gap-2 px-3 py-2 rounded-md border border-destructive/20 bg-destructive/10 text-destructive text-sm" role="alert">
-              <i class="ki-filled ki-shield-cross text-base"></i>
-              <span><%= error %></span>
-            </div>
-          <% } %>
-
-          <div class="flex flex-col gap-1">
-            <label class="kt-form-label font-normal text-mono" for="username">
-              Kullanıcı Adı
-            </label>
-            <input
-              id="username"
-              name="username"
-              type="text"
-              class="kt-input"
-              placeholder="admin"
-              autocomplete="username"
-              value="<%= typeof username !== 'undefined' ? username : '' %>"
-              required
-              <%= (typeof username === 'undefined' || !username) ? 'autofocus' : '' %>
-            />
-          </div>
-
-          <div class="flex flex-col gap-1">
-            <label class="kt-form-label font-normal text-mono" for="password">
-              Şifre
-            </label>
-            <div class="kt-input" data-kt-toggle-password="true">
-              <input
-                id="password"
-                name="password"
-                type="password"
-                placeholder="Şifrenizi girin"
-                autocomplete="current-password"
-                required
-                <%= (typeof username !== 'undefined' && username) ? 'autofocus' : '' %>
-              />
-              <button class="kt-btn kt-btn-icon" data-kt-toggle-password-trigger="true" type="button" aria-label="Şifreyi göster/gizle">
-                <i class="ki-filled ki-eye text-muted-foreground toggle-password-active:hidden"></i>
-                <i class="ki-filled ki-eye-slash text-muted-foreground hidden toggle-password-active:block"></i>
-              </button>
-            </div>
-          </div>
-
-          <button type="submit" class="kt-btn kt-btn-primary flex justify-center grow">
-            Giriş Yap
-          </button>
-        </form>
-      </div>
-    </div>
-
-    <!-- Sağ: Branded arka plan -->
-    <div class="lg:rounded-xl lg:border lg:border-border lg:m-5 order-1 lg:order-2 bg-center bg-no-repeat bg-cover branded-bg">
-      <div class="flex flex-col p-8 lg:p-10 gap-4">
-        <a href="/panel" class="flex items-center gap-2">
-          <img class="h-[28px] max-w-none" src="/panel-assets/media/app/default-logo.svg" alt="Story" />
-        </a>
-        <div class="flex flex-col gap-5 pt-20">
-          <h3 class="text-2xl font-semibold text-mono">
-            Yönetim Paneli
+  <div class="flex items-center justify-center grow bg-center bg-no-repeat page-bg">
+    <div class="kt-card max-w-[370px] w-full">
+      <form class="kt-card-content flex flex-col gap-5 p-10" method="post" action="/panel/login" id="sign_in_form">
+        <div class="text-center mb-2.5">
+          <h3 class="text-lg font-medium text-mono leading-none mb-2.5">
+            Admin Girişi
           </h3>
-          <p class="text-lg text-secondary-foreground max-w-[380px]">
-            Kullanıcıları, hikayeleri ve oyun oturumlarını tek bir yerden yönetin.
-          </p>
+          <div class="flex items-center justify-center font-medium">
+            <span class="text-sm text-secondary-foreground">
+              Story Backend yönetim paneli
+            </span>
+          </div>
         </div>
-      </div>
+
+        <% if (typeof error !== 'undefined' && error) { %>
+          <div class="kt-alert kt-alert-destructive flex items-center gap-2 px-3 py-2 rounded-md border border-destructive/20 bg-destructive/10 text-destructive text-sm" role="alert">
+            <i class="ki-filled ki-shield-cross text-base"></i>
+            <span><%= error %></span>
+          </div>
+        <% } %>
+
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label font-normal text-mono" for="username">
+            Kullanıcı Adı
+          </label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            class="kt-input"
+            placeholder="admin"
+            autocomplete="username"
+            value="<%= typeof username !== 'undefined' ? username : '' %>"
+            required
+            <%= (typeof username === 'undefined' || !username) ? 'autofocus' : '' %>
+          />
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label font-normal text-mono" for="password">
+            Şifre
+          </label>
+          <div class="kt-input" data-kt-toggle-password="true">
+            <input
+              id="password"
+              name="password"
+              type="password"
+              placeholder="Şifrenizi girin"
+              autocomplete="current-password"
+              required
+              <%= (typeof username !== 'undefined' && username) ? 'autofocus' : '' %>
+            />
+            <button class="kt-btn kt-btn-sm kt-btn-ghost kt-btn-icon bg-transparent! -me-1.5" data-kt-toggle-password-trigger="true" type="button">
+              <span class="kt-toggle-password-active:hidden">
+                <i class="ki-filled ki-eye text-muted-foreground"></i>
+              </span>
+              <span class="hidden kt-toggle-password-active:block">
+                <i class="ki-filled ki-eye-slash text-muted-foreground"></i>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="kt-btn kt-btn-primary flex justify-center grow">
+          Giriş Yap
+        </button>
+      </form>
     </div>
   </div>
 
-  <script src="js/core.bundle.js"></script>
-  <script src="vendors/ktui/ktui.min.js"></script>
+  <script src="/panel-assets/js/core.bundle.js"></script>
+  <script src="/panel-assets/vendors/ktui/ktui.min.js"></script>
 </body>
 </html>

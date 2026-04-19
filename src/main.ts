@@ -18,6 +18,9 @@ async function bootstrap() {
     rawBody: true,
   });
 
+  // Behind Coolify/Traefik reverse proxy: trust first proxy so req.secure / X-Forwarded-Proto are honored.
+  app.set('trust proxy', 1);
+
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT', 3000);
   const prefix = configService.get<string>('API_PREFIX', 'api');
