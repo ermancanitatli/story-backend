@@ -281,31 +281,19 @@ async function main() {
       .filter((x: any) => x.text);
 
     if (validChoices.length === 0) {
-      // Hepsi bozuk — fallback generic text ile ilk choice'ı kullan
-      const firstId = choices[0]?.id ?? '1';
-      console.warn(
-        `[step ${step}] ⚠ tüm choice'lar text'siz. Fallback: "Devam et" (id=${firstId}). payload=${JSON.stringify(choices).substring(0, 200)}`,
+      // Backend artık her zaman geçerli choice döndürüyor olmalı (retry + enforce)
+      console.error(
+        `[step ${step}] 🔴 TÜM CHOICE'LAR BOZUK — backend retry mekanizması başarısız olmuş.`,
       );
-      try {
-        lastProgress = await call(
-          'POST',
-          `/api/story-sessions/${sessionId}/choice`,
-          { choiceId: String(firstId), choiceText: 'Devam et', choiceType: 'action' },
-          headers,
-        );
-        pushRow(lastProgress, step, '(fallback: Devam et)');
-        continue;
-      } catch (err) {
-        console.error(`[step ${step}] fallback da başarısız:`, (err as Error).message);
-        break;
-      }
+      console.error(`  payload=${JSON.stringify(choices).substring(0, 300)}`);
+      break;
     }
 
     // Geçerli choice'lardan birini rasgele seç
     const pickFromValid = validChoices[Math.floor(rand() * validChoices.length)];
     const pick = pickFromValid.c;
     const pickIdx = pickFromValid.idx;
-    const choiceText = pickFromValid.text;
+    const choiceText: string = pickFromValid.text as string;
 
     try {
       lastProgress = await call(

@@ -426,6 +426,66 @@ export class StorySessionsService {
       userMessage,
     });
 
+    // === CHOICE VALIDATION + RETRY (max 3 deneme) ===
+    // Grok bazen text'siz choice döndürüyor ({id:"4"} gibi) veya eksik sayıda.
+    // Her iki dil modunda da her choice'ın text'i dolu olmalı.
+    // Fallback yok — AI düzeltene kadar (en fazla 3 ek deneme) tekrarlatırız.
+    // Sonunda hala eksikse: geçerli olanlar alınır (en az 3 olmalı), değilse hata.
+    const CHOICE_MAX_RETRIES = 3;
+    let choiceRetry = 0;
+    while (choiceRetry < CHOICE_MAX_RETRIES) {
+      const check = this.validateChoicesStrict(grokResponse);
+      if (check.valid) break;
+
+      this.logger.warn(
+        `[choice-validate] session=${session._id} step=${session.currentStep + 1} retry=${choiceRetry + 1}/${CHOICE_MAX_RETRIES} — ${check.reason}. Payload: ${JSON.stringify(check.payloadPreview)}`,
+      );
+
+      const retryUserMessage =
+        userMessage +
+        `\n\n[RESPONSE FORMAT ERROR — ATTEMPT ${choiceRetry + 1}/${CHOICE_MAX_RETRIES}]\n` +
+        `Your previous response had invalid choices: ${check.reason}\n` +
+        `CRITICAL: You MUST return EXACTLY 4 choices. Each choice MUST have:\n` +
+        `  - "id": "1" | "2" | "3" | "4" (string)\n` +
+        `  - "text": a non-empty sentence in the player's perspective\n` +
+        `  - "type": "action" | "dialogue" | "exploration" | "decision"\n` +
+        `Example valid choice: { "id": "1", "text": "Evin kapısını aç ve içeri gir", "type": "action" }\n` +
+        `Do NOT omit the text field. Do NOT return empty strings. Regenerate the full JSON now with 4 valid choices.`;
+
+      try {
+        grokResponse = await this.aiService.callGrokAPI({
+          systemPrompt,
+          userMessage: retryUserMessage,
+        });
+        choiceRetry++;
+      } catch (err) {
+        this.logger.warn(
+          `[choice-validate] retry error: ${(err as Error).message}`,
+        );
+        break;
+      }
+    }
+
+    // Son kontrol: hala bozuksa — geçerli olanları al (en az 3 varsa kabul).
+    const finalCheck = this.validateChoicesStrict(grokResponse);
+    if (!finalCheck.valid) {
+      const validOnly = this.keepOnlyValidChoices(grokResponse);
+      if (validOnly.count >= 3) {
+        this.logger.warn(
+          `[choice-validate] 3 retry sonrası hala 4 tam değil — ${validOnly.count} geçerli choice ile devam ediliyor`,
+        );
+        if (Array.isArray(grokResponse.choices)) {
+          grokResponse.choices = validOnly.choices;
+        } else if (grokResponse.localizedChoices) {
+          grokResponse.localizedChoices = validOnly.localizedChoices || grokResponse.localizedChoices;
+        }
+      } else {
+        throw new BadRequestException(
+          `AI 3 deneme sonrası geçerli choice üretemedi (${validOnly.count}/4). Lütfen tekrar deneyin.`,
+        );
+      }
+    }
+
     // === TRANSITION VALIDATION + RETRY ===
     if (transitionMode === 'entering' && transitionDirective) {
       const validation = this.validateTransitionResponse(
@@ -512,21 +572,13 @@ export class StorySessionsService {
       );
     }
 
-    // Choice'ları normalize et — Grok bazen text'siz choice dönüyor ({id:"4"} gibi)
-    const normalizedChoices = this.normalizeGrokChoices(grokResponse.choices);
-    if (normalizedChoices.length < 4) {
-      this.logger.warn(
-        `[choice-normalize] session=${session._id} step=${newStep}: AI ${4 - normalizedChoices.length} choice döndürmedi, fallback eklendi`,
-      );
-    }
-
-    // Progress kaydet
+    // Progress kaydet — choice'lar zaten yukarıda validate + retry'dan geçti
     const progress = await this.progressModel.create({
       sessionId: session._id,
       userId: session.userId,
       stepNumber: newStep,
       currentScene: grokResponse.currentScene,
-      choices: normalizedChoices,
+      choices: grokResponse.choices,
       currentChapter: newChapter,
       chapterStepCount: isChapterTransition ? 0 : newChapterStep,
       effects: normalizedEffects,
@@ -656,45 +708,99 @@ export class StorySessionsService {
    * içeriyor mu kontrol eder. Basit substring check; case-insensitive.
    */
   /**
-   * Grok bazen choice'ları eksik döndürüyor: { id: "4" } gibi text'siz.
-   * Her choice 4 elemanlı olmalı, hepsi text/type ile dolu.
-   * Eksikse fallback text ile tamamla — iOS'ta "boş buton" durumuna düşmesin.
+   * Choice'ların strict validation'ı — 4 adet olmalı, her birinde id + text + type
+   * dolu olmalı. Fallback YOK: invalid olursa retry tetiklenir.
+   * Bilingual response'ta her dil için aynı kontrol.
    */
-  private normalizeGrokChoices(choices: any): any[] {
-    const FALLBACKS = [
-      { text: 'Devam et', type: 'action' },
-      { text: 'Etrafı incele', type: 'exploration' },
-      { text: 'Biraz düşün', type: 'decision' },
-      { text: 'Konuş', type: 'dialogue' },
-    ];
-
+  private validateChoicesStrict(response: any): {
+    valid: boolean;
+    reason: string;
+    payloadPreview: any;
+  } {
     const extractText = (c: any): string => {
       if (!c) return '';
-      if (typeof c.text === 'string' && c.text.trim().length > 0) {
-        return c.text.trim();
-      }
+      if (typeof c.text === 'string') return c.text.trim();
       if (typeof c.text === 'object' && c.text) {
-        const found = Object.values(c.text).find(
-          (v) => typeof v === 'string' && (v as string).trim().length > 0,
-        );
-        if (found) return (found as string).trim();
+        const vals = Object.values(c.text).filter(
+          (v) => typeof v === 'string',
+        ) as string[];
+        return vals.find((v) => v.trim().length > 0)?.trim() || '';
       }
       return '';
     };
 
-    const arr = Array.isArray(choices) ? choices : [];
-    const normalized: any[] = [];
-    for (let i = 0; i < 4; i++) {
-      const c = arr[i] || {};
-      const text = extractText(c);
-      const fb = FALLBACKS[i];
-      normalized.push({
-        id: c.id != null ? String(c.id) : String(i + 1),
-        text: text || fb.text,
-        type: c.type || fb.type,
-      });
+    const checkArray = (arr: any[]): { valid: boolean; reason: string } => {
+      if (!Array.isArray(arr)) return { valid: false, reason: 'choices not array' };
+      if (arr.length !== 4)
+        return { valid: false, reason: `choice count=${arr.length}, must be 4` };
+      for (let i = 0; i < arr.length; i++) {
+        const c = arr[i];
+        if (!c || typeof c !== 'object')
+          return { valid: false, reason: `choice[${i}] not an object` };
+        const text = extractText(c);
+        if (!text || text.length < 2)
+          return { valid: false, reason: `choice[${i}] has no text` };
+      }
+      return { valid: true, reason: 'ok' };
+    };
+
+    // Bilingual mode
+    if (response.scenes && response.localizedChoices) {
+      for (const lang of Object.keys(response.localizedChoices)) {
+        const r = checkArray(response.localizedChoices[lang]);
+        if (!r.valid) {
+          return {
+            valid: false,
+            reason: `[${lang}] ${r.reason}`,
+            payloadPreview: response.localizedChoices[lang],
+          };
+        }
+      }
+      return { valid: true, reason: 'ok', payloadPreview: null };
     }
-    return normalized;
+
+    // Single lang
+    const r = checkArray(response.choices);
+    return {
+      valid: r.valid,
+      reason: r.reason,
+      payloadPreview: response.choices,
+    };
+  }
+
+  /**
+   * Invalid choice'ları atıp geçerli olanları tutar. 3+ geçerli varsa kabul edilir,
+   * azsa exception atılır (retry tükendi fallback de yok).
+   */
+  private keepOnlyValidChoices(response: any): {
+    count: number;
+    choices?: any[];
+    localizedChoices?: Record<string, any[]>;
+  } {
+    const isValid = (c: any): boolean => {
+      if (!c) return false;
+      if (typeof c.text === 'string') return c.text.trim().length >= 2;
+      if (typeof c.text === 'object' && c.text) {
+        return Object.values(c.text).some(
+          (v) => typeof v === 'string' && (v as string).trim().length >= 2,
+        );
+      }
+      return false;
+    };
+
+    if (response.localizedChoices) {
+      const out: Record<string, any[]> = {};
+      let minCount = Infinity;
+      for (const lang of Object.keys(response.localizedChoices)) {
+        const filtered = (response.localizedChoices[lang] || []).filter(isValid);
+        out[lang] = filtered;
+        minCount = Math.min(minCount, filtered.length);
+      }
+      return { count: minCount === Infinity ? 0 : minCount, localizedChoices: out };
+    }
+
+    const filtered = (response.choices || []).filter(isValid);
+    return { count: filtered.length, choices: filtered };
   }
 
   private validateTransitionResponse(

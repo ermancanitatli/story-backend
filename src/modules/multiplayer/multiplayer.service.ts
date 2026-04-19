@@ -322,7 +322,48 @@ export class MultiplayerService {
       chapterBridges: tierChapterBridges,
     });
 
-    const grokResponse = await this.aiService.callGrokAPI({ systemPrompt, userMessage });
+    let grokResponse = await this.aiService.callGrokAPI({ systemPrompt, userMessage });
+
+    // === CHOICE VALIDATION + RETRY (max 3 deneme) ===
+    const CHOICE_MAX_RETRIES = 3;
+    let choiceRetry = 0;
+    while (choiceRetry < CHOICE_MAX_RETRIES) {
+      const check = this.validateMultiplayerChoices(grokResponse);
+      if (check.valid) break;
+      this.logger.warn(
+        `[choice-validate][multi] session=${sessionId} retry=${choiceRetry + 1}/${CHOICE_MAX_RETRIES} — ${check.reason}`,
+      );
+      const retryMsg =
+        userMessage +
+        `\n\n[RESPONSE FORMAT ERROR — ATTEMPT ${choiceRetry + 1}/${CHOICE_MAX_RETRIES}]\n` +
+        `Your previous response had invalid choices: ${check.reason}\n` +
+        `CRITICAL: EXACTLY 4 choices required. Each must have non-empty "text" and valid "type".\n` +
+        `Regenerate full JSON now.`;
+      try {
+        grokResponse = await this.aiService.callGrokAPI({ systemPrompt, userMessage: retryMsg });
+        choiceRetry++;
+      } catch (err) {
+        this.logger.warn(`[choice-validate][multi] retry err: ${(err as Error).message}`);
+        break;
+      }
+    }
+    const finalCheckMP = this.validateMultiplayerChoices(grokResponse);
+    if (!finalCheckMP.valid) {
+      const kept = this.keepValidMultiplayerChoices(grokResponse);
+      if (kept.minCount >= 3) {
+        this.logger.warn(
+          `[choice-validate][multi] ${kept.minCount}/4 valid choice ile devam`,
+        );
+        if (grokResponse.localizedChoices && kept.localizedChoices) {
+          grokResponse.localizedChoices = kept.localizedChoices;
+        }
+        if (kept.choices) grokResponse.choices = kept.choices;
+      } else {
+        throw new BadRequestException(
+          `AI 3 deneme sonrası geçerli choice üretemedi (${kept.minCount}/4).`,
+        );
+      }
+    }
 
     // Çift dilli response normalize et
     let sceneText: string;
@@ -519,13 +560,87 @@ export class MultiplayerService {
         return { id: String(i + 1), text: c, type: 'action' };
       }
       if (typeof c === 'object' && c !== null) {
+        // Choice text bilingual response'ta object olabilir; ilk string değeri al.
+        let textVal = '';
+        if (typeof c.text === 'string') textVal = c.text;
+        else if (typeof c.text === 'object' && c.text) {
+          const found = Object.values(c.text).find(
+            (v) => typeof v === 'string' && (v as string).trim().length > 0,
+          );
+          textVal = (found as string) || '';
+        }
         return {
           id: String(c.id ?? c._id ?? i + 1),
-          text: String(c.text ?? c.label ?? c.description ?? `Choice ${i + 1}`),
+          text: String(textVal || c.label || c.description || '').trim(),
           type: String(c.type ?? 'action'),
         };
       }
-      return { id: String(i + 1), text: `Choice ${i + 1}`, type: 'action' };
+      return { id: String(i + 1), text: '', type: 'action' };
     });
+  }
+
+  /**
+   * Strict validation — multiplayer için. 4 choice, her birinde text dolu.
+   */
+  private validateMultiplayerChoices(response: any): { valid: boolean; reason: string } {
+    const extractText = (c: any): string => {
+      if (!c) return '';
+      if (typeof c.text === 'string') return c.text.trim();
+      if (typeof c.text === 'object' && c.text) {
+        const vals = Object.values(c.text).filter(
+          (v) => typeof v === 'string',
+        ) as string[];
+        return vals.find((v) => v.trim().length > 0)?.trim() || '';
+      }
+      return '';
+    };
+    const checkArr = (arr: any): { valid: boolean; reason: string } => {
+      if (!Array.isArray(arr)) return { valid: false, reason: 'not array' };
+      if (arr.length !== 4)
+        return { valid: false, reason: `count=${arr.length}, must be 4` };
+      for (let i = 0; i < arr.length; i++) {
+        const t = extractText(arr[i]);
+        if (!t || t.length < 2) return { valid: false, reason: `choice[${i}] empty text` };
+      }
+      return { valid: true, reason: 'ok' };
+    };
+
+    if (response.localizedChoices) {
+      for (const lang of Object.keys(response.localizedChoices)) {
+        const r = checkArr(response.localizedChoices[lang]);
+        if (!r.valid) return { valid: false, reason: `[${lang}] ${r.reason}` };
+      }
+      return { valid: true, reason: 'ok' };
+    }
+    return checkArr(response.choices);
+  }
+
+  private keepValidMultiplayerChoices(response: any): {
+    minCount: number;
+    choices?: any[];
+    localizedChoices?: Record<string, any[]>;
+  } {
+    const isValid = (c: any): boolean => {
+      if (!c) return false;
+      if (typeof c.text === 'string') return c.text.trim().length >= 2;
+      if (typeof c.text === 'object' && c.text) {
+        return Object.values(c.text).some(
+          (v) => typeof v === 'string' && (v as string).trim().length >= 2,
+        );
+      }
+      return false;
+    };
+    if (response.localizedChoices) {
+      const out: Record<string, any[]> = {};
+      let minC = Infinity;
+      for (const lang of Object.keys(response.localizedChoices)) {
+        const f = (response.localizedChoices[lang] || []).filter(isValid);
+        out[lang] = f;
+        minC = Math.min(minC, f.length);
+      }
+      return { minCount: minC === Infinity ? 0 : minC, localizedChoices: out };
+    }
+    const f = (response.choices || []).filter(isValid);
+    return { minCount: f.length, choices: f };
   }
 }
