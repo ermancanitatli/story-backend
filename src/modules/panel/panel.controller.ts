@@ -76,6 +76,13 @@ export class PanelController {
     });
   }
 
+  /**
+   * Panel logout.
+   * CSRF note: csurf (eski) vs @nestjs/csrf bu aşamada scope dışı.
+   * SameSite=Lax cookie + POST-only endpoint bu use case için yeterli güvenlik sağlar.
+   * İleride cross-origin form submit riski oluşursa CSRF middleware eklenebilir.
+   * Hem header dropdown hem sidebar footer aynı endpoint'e POST form ile gönderir (tek source of truth).
+   */
   @Post('logout')
   logout(
     @Req() req: Request & { session: PanelSession },
@@ -91,7 +98,7 @@ export class PanelController {
   @Render('panel/dashboard')
   dashboard(@Req() req: Request & { session: PanelSession }) {
     return {
-      title: 'Panel',
+      title: 'Dashboard',
       username: req.session?.username || 'Admin',
       currentPath: req.path,
       breadcrumbs: [{ label: 'Dashboard' }],

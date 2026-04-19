@@ -1,58 +1,32 @@
-<!DOCTYPE html>
-<html class="h-full" data-kt-theme="true" data-kt-theme-mode="light" dir="ltr" lang="tr">
-<head>
-  <title>Story Admin — Panel</title>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/panel-assets/media/app/favicon-32x32.png" />
-  <link rel="shortcut icon" href="/panel-assets/media/app/favicon.ico" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
-  <link rel="stylesheet" href="/panel-assets/vendors/keenicons/styles.bundle.css" />
-  <link rel="stylesheet" href="/panel-assets/css/styles.css" />
-</head>
-<body class="antialiased flex flex-col min-h-full text-base text-foreground bg-background">
-  <script>
-    const defaultThemeMode = 'light';
-    let themeMode;
-    if (document.documentElement) {
-      if (localStorage.getItem('kt-theme')) {
-        themeMode = localStorage.getItem('kt-theme');
-      } else {
-        themeMode = defaultThemeMode;
-      }
-      document.documentElement.classList.add(themeMode);
-    }
-  </script>
+<% layout('panel/layout') %>
 
-  <header class="flex items-center justify-between px-6 py-4 border-b border-border">
-    <div class="flex items-center gap-3">
-      <img class="h-6" src="/panel-assets/media/app/default-logo.svg" alt="Story" />
-      <span class="text-base font-semibold text-mono">Story Admin</span>
+<div class="flex flex-col gap-5">
+  <div class="kt-card">
+    <div class="kt-card-content p-6">
+      <h2 class="text-xl font-semibold text-mono mb-2">Merhaba, <%= typeof username !== 'undefined' ? username : 'Admin' %>!</h2>
+      <p class="text-sm text-secondary-foreground">Story Admin Panel'e hoş geldin.</p>
     </div>
-    <form method="post" action="/panel/logout">
-      <button type="submit" class="kt-btn kt-btn-outline kt-btn-sm">
-        <i class="ki-filled ki-exit-right"></i>
-        <span>Çıkış</span>
-      </button>
-    </form>
-  </header>
+  </div>
 
-  <main class="flex-1 p-6 lg:p-10">
-    <div class="max-w-5xl mx-auto flex flex-col gap-6">
-      <div class="kt-card">
-        <div class="kt-card-header">
-          <h3 class="kt-card-title">Hoş geldin, <%= username %></h3>
+  <!-- Quick links grid -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <% [
+      {href:'/panel/users', icon:'ki-people', label:'Kullanıcılar', desc:'Kullanıcıları yönet'},
+      {href:'/panel/stories', icon:'ki-book', label:'Hikayeler', desc:'Hikayeleri düzenle'},
+      {href:'/panel/notifications', icon:'ki-notification-bing', label:'Bildirimler', desc:'Push bildirim gönder'},
+      {href:'/panel/audit', icon:'ki-shield-tick', label:'Audit Log', desc:'İşlem geçmişi'}
+    ].forEach(item => { %>
+      <a href="<%= item.href %>" class="kt-card hover:border-primary transition-colors">
+        <div class="kt-card-content p-5 flex items-start gap-4">
+          <div class="flex items-center justify-center size-11 rounded-lg bg-primary/10 text-primary shrink-0">
+            <i class="ki-filled <%= item.icon %> text-xl"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-semibold text-mono"><%= item.label %></h3>
+            <p class="text-xs text-secondary-foreground mt-0.5"><%= item.desc %></p>
+          </div>
         </div>
-        <div class="kt-card-content">
-          <p class="text-sm text-secondary-foreground">
-            Giriş başarılı. Dashboard modülleri ilerleyen aşamalarda buraya eklenecek.
-          </p>
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <script src="/panel-assets/js/core.bundle.js"></script>
-  <script src="/panel-assets/vendors/ktui/ktui.min.js"></script>
-</body>
-</html>
+      </a>
+    <% }) %>
+  </div>
+</div>
