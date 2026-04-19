@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { PanelController } from './panel.controller';
 import { PanelNotificationsController } from './panel-notifications.controller';
+import { PanelApiController } from './panel-api.controller';
 import { AdminUsersService } from './admin-users.service';
 import { AdminAuditLogService } from './admin-audit-log.service';
 import { AdminUsersManagementService } from './admin-users-management.service';
@@ -31,7 +32,7 @@ import { NotificationModule } from '../notifications/notification.module';
     forwardRef(() => SocketModule),
     NotificationModule,
   ],
-  controllers: [PanelController, PanelNotificationsController],
+  controllers: [PanelController, PanelNotificationsController, PanelApiController],
   providers: [
     AdminUsersService,
     AdminAuditLogService,

@@ -19,6 +19,9 @@ export class AdminUser extends Document {
 
   @Prop()
   lastLoginAt?: Date;
+
+  @Prop({ default: false })
+  mustChangePassword: boolean;
 }
 
 export const AdminUserSchema = SchemaFactory.createForClass(AdminUser);
