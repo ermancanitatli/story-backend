@@ -165,15 +165,15 @@
 
           <!-- Media detail modal -->
           <div id="media-modal" class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" role="dialog">
-            <div class="bg-background border border-border rounded-lg max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-              <div class="flex items-center justify-between px-5 py-3 border-b border-border">
+            <div class="bg-background border border-border rounded-lg max-w-3xl w-full flex flex-col" style="max-height:90vh;overflow:hidden;">
+              <div class="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
                 <h4 class="text-base font-semibold" id="media-modal-title">Medya Detayı</h4>
                 <button type="button" id="media-modal-close" class="kt-btn kt-btn-icon kt-btn-ghost">
                   <i class="ki-filled ki-cross"></i>
                 </button>
               </div>
-              <div class="flex-1 overflow-auto">
-                <div id="media-modal-preview" class="bg-muted/20 flex items-center justify-center min-h-[300px] p-4"></div>
+              <div class="flex-1" style="overflow-y:auto;min-height:0;">
+                <div id="media-modal-preview" class="bg-muted/20 flex items-center justify-center p-4"></div>
                 <div class="p-5 grid gap-4">
                   <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
                     <label class="kt-form-label max-w-56">URL</label>
@@ -200,7 +200,7 @@
                   </div>
                 </div>
               </div>
-              <div class="flex items-center justify-between px-5 py-3 border-t border-border bg-muted/10">
+              <div class="flex items-center justify-between px-5 py-3 border-t border-border bg-muted/10 shrink-0">
                 <button type="button" id="media-modal-delete" class="kt-btn kt-btn-sm kt-btn-destructive">
                   <i class="ki-filled ki-trash"></i> Sil
                 </button>
