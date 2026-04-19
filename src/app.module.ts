@@ -4,8 +4,11 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { WinstonModule } from 'nest-winston';
 import { buildMongoUri, resolveDbName } from './config/database.config';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { winstonConfig } from './common/logger/winston.config';
+import { User, UserSchema } from './modules/users/schemas/user.schema';
 
 // Feature modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -36,6 +39,9 @@ import { PanelModule } from './modules/panel/panel.module';
       isGlobal: true,
       envFilePath: ['.env', '.env.example'],
     }),
+
+    // Global Winston logger (JSON in prod, colorized in dev)
+    WinstonModule.forRoot(winstonConfig),
 
     // MongoDB
     MongooseModule.forRootAsync({
@@ -71,6 +77,9 @@ import { PanelModule } from './modules/panel/panel.module';
 
     // Scheduler
     ScheduleModule.forRoot(),
+
+    // User model needed by global JwtAuthGuard (ban/delete fresh lookup)
+    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
 
     // Feature modules
     AuthModule,
