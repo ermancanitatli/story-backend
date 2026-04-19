@@ -135,4 +135,24 @@ export class AdminUsersService {
     });
     return { tempPassword };
   }
+
+  async enableTotp(
+    userId: string,
+    secret: string,
+    recoveryCodes: string[],
+  ): Promise<void> {
+    await this.adminUserModel.findByIdAndUpdate(userId, {
+      totpSecret: secret,
+      totpEnabled: true,
+      recoveryCodes,
+    });
+  }
+
+  async disableTotp(userId: string): Promise<void> {
+    await this.adminUserModel.findByIdAndUpdate(userId, {
+      totpSecret: null,
+      totpEnabled: false,
+      recoveryCodes: [],
+    });
+  }
 }

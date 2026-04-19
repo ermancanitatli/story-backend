@@ -96,4 +96,87 @@
     const url = window.__story?.coverImage?.[0]?.url;
     if (url) showCover(url);
   }, 700);
+
+  // GALLERY
+  const galleryDrop = document.getElementById('gallery-dropzone');
+  const galleryInput = document.getElementById('gallery-input');
+  const galleryGrid = document.getElementById('gallery-grid');
+
+  function renderGallery() {
+    if (!galleryGrid || !window.__story) return;
+    const items = window.__story.galleryImages || [];
+    galleryGrid.innerHTML = items.map((img, i) => `
+      <div class="gallery-item relative border border-border rounded overflow-hidden" draggable="true" data-index="${i}">
+        <img src="${img.thumbnail || img.url}" class="w-full h-32 object-cover"/>
+        <input type="text" class="kt-input text-xs rounded-none border-x-0 border-b-0" placeholder="alt" value="${(img.alt || '').replace(/"/g,'&quot;')}" data-alt-index="${i}"/>
+        <button type="button" class="absolute top-1 right-1 size-6 rounded-full bg-destructive text-white text-xs gallery-del" data-index="${i}">×</button>
+      </div>
+    `).join('');
+
+    // alt inputs
+    galleryGrid.querySelectorAll('[data-alt-index]').forEach(inp => {
+      inp.addEventListener('input', e => {
+        const i = parseInt(e.target.dataset.altIndex, 10);
+        window.__story.galleryImages[i].alt = e.target.value;
+      });
+    });
+
+    // delete
+    galleryGrid.querySelectorAll('.gallery-del').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!confirm('Silinsin mi?')) return;
+        const i = parseInt(btn.dataset.index, 10);
+        window.__story.galleryImages.splice(i, 1);
+        renderGallery();
+      });
+    });
+
+    // drag-drop reorder (HTML5 native)
+    let draggedIndex = null;
+    galleryGrid.querySelectorAll('.gallery-item').forEach(el => {
+      el.addEventListener('dragstart', e => { draggedIndex = parseInt(el.dataset.index, 10); el.classList.add('opacity-50'); });
+      el.addEventListener('dragend', () => el.classList.remove('opacity-50'));
+      el.addEventListener('dragover', e => e.preventDefault());
+      el.addEventListener('drop', e => {
+        e.preventDefault();
+        const targetIndex = parseInt(el.dataset.index, 10);
+        if (draggedIndex === null || draggedIndex === targetIndex) return;
+        const arr = window.__story.galleryImages;
+        const [moved] = arr.splice(draggedIndex, 1);
+        arr.splice(targetIndex, 0, moved);
+        renderGallery();
+      });
+    });
+  }
+
+  galleryDrop?.addEventListener('click', e => { if (!e.target.closest('button')) galleryInput?.click(); });
+  galleryDrop?.addEventListener('dragover', e => { e.preventDefault(); galleryDrop.classList.add('bg-muted/30'); });
+  galleryDrop?.addEventListener('dragleave', () => galleryDrop.classList.remove('bg-muted/30'));
+  galleryDrop?.addEventListener('drop', e => {
+    e.preventDefault();
+    galleryDrop.classList.remove('bg-muted/30');
+    handleGalleryFiles(Array.from(e.dataTransfer.files));
+  });
+  galleryInput?.addEventListener('change', e => handleGalleryFiles(Array.from(e.target.files)));
+
+  async function handleGalleryFiles(files) {
+    if (!window.__story) window.__story = {};
+    window.__story.galleryImages = window.__story.galleryImages || [];
+    // concurrency 3
+    const chunks = [];
+    for (let i = 0; i < files.length; i += 3) chunks.push(files.slice(i, i + 3));
+    for (const chunk of chunks) {
+      const uploaded = await Promise.all(chunk.map(f => uploadFile(f, 'gallery')));
+      uploaded.forEach(u => {
+        if (u) window.__story.galleryImages.push({
+          _id: u.imageId, url: u.url, thumbnail: u.thumbnail, order: window.__story.galleryImages.length, alt: '',
+        });
+      });
+      renderGallery();
+    }
+    window.panelToast?.success(`${files.length} görsel yüklendi`);
+  }
+
+  setTimeout(() => { if (window.__story) renderGallery(); }, 700);
+  setTimeout(() => { if (window.__story) renderGallery(); }, 1500);
 })();

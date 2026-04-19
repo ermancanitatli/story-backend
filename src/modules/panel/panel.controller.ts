@@ -22,6 +22,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { PanelHtmlExceptionFilter } from '../../common/filters/panel-html-exception.filter';
 import { AdminUsersService } from './admin-users.service';
 import { AdminAuditLogService } from './admin-audit-log.service';
+import { TotpService } from './totp.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { PageViewInterceptor } from './interceptors/page-view.interceptor';
 import { AdminPageView } from './schemas/admin-page-view.schema';
@@ -52,6 +53,7 @@ export class PanelController {
     @InjectModel(AdminPageView.name)
     private readonly pageViewModel: Model<AdminPageView>,
     private readonly segmentationService: UserSegmentationService,
+    private readonly totpService: TotpService,
   ) {}
 
   @Get('login')
@@ -282,6 +284,122 @@ export class PanelController {
       res.clearCookie('panel.sid');
       res.redirect('/panel/login?passwordChanged=1');
     });
+  }
+
+  @Get('account/2fa')
+  async show2FA(
+    @Req() req: Request & { session: PanelSession & { pendingTotpSecret?: string } },
+    @Res() res: Response,
+    @Query('error') error?: string,
+  ) {
+    const user = await this.adminUsersService.findById(req.session.adminId!);
+    if (!user) {
+      return res.redirect('/panel/login');
+    }
+    let qrDataUrl: string | null = null;
+    let pendingSecret: string | null = null;
+    const enabled = (user as any).totpEnabled === true;
+    if (!enabled) {
+      pendingSecret = this.totpService.generateSecret();
+      req.session.pendingTotpSecret = pendingSecret;
+      qrDataUrl = await this.totpService.generateQR(
+        user.username,
+        pendingSecret,
+      );
+    }
+    let errorMsg: string | null = null;
+    if (error === 'invalid') errorMsg = 'Geçersiz kod, tekrar deneyin.';
+    if (error === 'password') errorMsg = 'Şifre hatalı.';
+    return res.render('panel/account/2fa', {
+      title: '2FA',
+      currentPath: req.path,
+      username: user.username,
+      breadcrumbs: [
+        { label: 'Hesap', href: '/panel/account/password' },
+        { label: '2FA' },
+      ],
+      enabled,
+      qrDataUrl,
+      pendingSecret,
+      justEnabled: false,
+      recoveryCodes: null,
+      error: errorMsg,
+    });
+  }
+
+  @Post('account/2fa/enable')
+  async enable2FA(
+    @Body('code') code: string,
+    @Req() req: Request & { session: PanelSession & { pendingTotpSecret?: string } },
+    @Res() res: Response,
+  ) {
+    const pending = req.session.pendingTotpSecret;
+    if (!pending) return res.redirect('/panel/account/2fa');
+    if (!this.totpService.verify(code, pending)) {
+      return res.redirect('/panel/account/2fa?error=invalid');
+    }
+    const recoveryCodes = this.totpService.generateRecoveryCodes();
+    const hashed = await this.totpService.hashRecoveryCodes(recoveryCodes);
+    await this.adminUsersService.enableTotp(
+      req.session.adminId!,
+      pending,
+      hashed,
+    );
+    delete req.session.pendingTotpSecret;
+
+    try {
+      await this.auditService.record({
+        adminId: req.session.adminId!,
+        adminUsername: req.session.username || '',
+        action: 'TOTP_ENABLE',
+      });
+    } catch {
+      // audit log hatası 2FA akışını engellemez
+    }
+
+    return res.render('panel/account/2fa', {
+      title: '2FA',
+      currentPath: req.path,
+      username: req.session.username || 'Admin',
+      breadcrumbs: [
+        { label: 'Hesap', href: '/panel/account/password' },
+        { label: '2FA' },
+      ],
+      enabled: true,
+      justEnabled: true,
+      recoveryCodes,
+      qrDataUrl: null,
+      pendingSecret: null,
+      error: null,
+    });
+  }
+
+  @Post('account/2fa/disable')
+  async disable2FA(
+    @Body('password') password: string,
+    @Req() req: Request & { session: PanelSession },
+    @Res() res: Response,
+  ) {
+    const user = await this.adminUsersService.verify(
+      req.session.username || '',
+      password,
+    );
+    if (!user) {
+      return res.redirect('/panel/account/2fa?error=password');
+    }
+    await this.adminUsersService.disableTotp(req.session.adminId!);
+
+    try {
+      await this.auditService.record({
+        adminId: req.session.adminId!,
+        adminUsername: user.username,
+        action: 'TOTP_DISABLE',
+      });
+    } catch {
+      // audit log hatası 2FA akışını engellemez
+    }
+
+    return res.redirect('/panel/account/2fa');
   }
 
   @Get('users')

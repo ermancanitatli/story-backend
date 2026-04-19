@@ -121,10 +121,14 @@
             </div>
           </section>
 
-          <!-- GALLERY (STORY-15 tarafından doldurulacak) -->
           <section>
             <h3 class="text-base font-semibold mb-3">Galeri Görselleri</h3>
-            <p class="text-sm text-muted-foreground">Galeri yönetimi STORY-15 görevi ile eklenecek.</p>
+            <div id="gallery-dropzone" class="border-2 border-dashed border-border rounded-md p-4 mb-4 text-center cursor-pointer hover:bg-muted/30">
+              <i class="ki-filled ki-picture text-[32px] text-muted-foreground"></i>
+              <p class="text-sm mt-2">Çoklu dosya sürükle-bırak veya tıkla</p>
+              <input type="file" id="gallery-input" accept="image/jpeg,image/png,image/webp" multiple class="hidden"/>
+            </div>
+            <div id="gallery-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"></div>
           </section>
         </div>
       </div>

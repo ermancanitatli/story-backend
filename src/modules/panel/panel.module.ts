@@ -8,6 +8,7 @@ import { PanelStoriesController } from './panel-stories.controller';
 import { AdminUsersService } from './admin-users.service';
 import { AdminAuditLogService } from './admin-audit-log.service';
 import { AdminUsersManagementService } from './admin-users-management.service';
+import { TotpService } from './totp.service';
 import { AdminUser, AdminUserSchema } from './schemas/admin-user.schema';
 import { AdminAuditLog, AdminAuditLogSchema } from './schemas/admin-audit-log.schema';
 import { AdminPageView, AdminPageViewSchema } from './schemas/admin-page-view.schema';
@@ -48,6 +49,7 @@ import { StorageModule } from '../storage/storage.module';
     AdminUsersService,
     AdminAuditLogService,
     AdminUsersManagementService,
+    TotpService,
     AuditInterceptor,
     PageViewInterceptor,
     SuperadminGuard,
@@ -56,6 +58,7 @@ import { StorageModule } from '../storage/storage.module';
     AdminUsersService,
     AdminAuditLogService,
     AdminUsersManagementService,
+    TotpService,
     AuditInterceptor,
   ],
 })

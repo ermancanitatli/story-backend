@@ -11,7 +11,9 @@ export type AuditAction =
   | 'LOGIN'
   | 'LOGOUT'
   | 'PASSWORD_CHANGE'
-  | 'ROLE_CHANGE';
+  | 'ROLE_CHANGE'
+  | 'TOTP_ENABLE'
+  | 'TOTP_DISABLE';
 
 export type AuditResource =
   | 'admin_user'
@@ -46,6 +48,8 @@ export class AdminAuditLog extends Document {
       'LOGOUT',
       'PASSWORD_CHANGE',
       'ROLE_CHANGE',
+      'TOTP_ENABLE',
+      'TOTP_DISABLE',
     ],
   })
   action: AuditAction;
