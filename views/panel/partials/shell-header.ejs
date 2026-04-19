@@ -13,113 +13,11 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
   <link rel="stylesheet" href="/panel-assets/vendors/keenicons/styles.bundle.css" />
   <link rel="stylesheet" href="/panel-assets/css/styles.css" />
-  <style>
-    /* styles.css line 12104 .kt-input override'ını geri al — form input'ları düzgün padding/height alsın */
-    input.kt-input, textarea.kt-input, select.kt-input {
-      display: block !important;
-      width: 100%;
-      height: auto;
-      min-height: 2.5rem;
-      padding: 0.5rem 0.75rem !important;
-      border: 1px solid var(--input, #e5e7eb);
-      border-radius: 0.375rem;
-      background-color: var(--background, #fff);
-      color: var(--foreground, #111);
-      font-size: 0.875rem;
-      line-height: 1.25rem;
-      outline: none;
-    }
-    textarea.kt-input { min-height: 4.5rem; }
-    input.kt-input:focus, textarea.kt-input:focus, select.kt-input:focus {
-      border-color: var(--ring, #6366f1);
-      box-shadow: 0 0 0 3px rgb(99 102 241 / 0.15);
-    }
-    /* kt-input wrapper (password toggle vs için) */
-    .kt-input:not(input):not(textarea):not(select) {
-      display: flex;
-      align-items: center;
-      min-height: 2.5rem;
-      border: 1px solid var(--input, #e5e7eb);
-      border-radius: 0.375rem;
-      background: var(--background, #fff);
-      padding: 0 0.25rem 0 0.75rem;
-    }
-    .kt-input:not(input):not(textarea):not(select) > input {
-      flex: 1;
-      border: 0;
-      outline: none;
-      background: transparent;
-      padding: 0.5rem 0;
-    }
-    /* kt-btn fallback */
-    .kt-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.375rem;
-      padding: 0.5rem 1rem;
-      border-radius: 0.375rem;
-      font-weight: 500;
-      font-size: 0.875rem;
-      line-height: 1.25rem;
-      transition: all 0.15s ease;
-      cursor: pointer;
-      border: 1px solid transparent;
-    }
-    .kt-btn-primary { background: #2563eb; color: #fff; }
-    .kt-btn-primary:hover { background: #1d4ed8; }
-    .kt-btn-outline { background: #fff; color: #111; border-color: #e5e7eb; }
-    .kt-btn-outline:hover { background: #f9fafb; }
-    .kt-btn-destructive { background: #dc2626; color: #fff; }
-    .kt-btn-destructive:hover { background: #b91c1c; }
-    .kt-btn-ghost { background: transparent; color: #111; }
-    .kt-btn-ghost:hover { background: #f3f4f6; }
-    .kt-btn-icon { padding: 0.5rem; }
-    .kt-btn-sm { padding: 0.25rem 0.625rem; font-size: 0.75rem; }
-    /* kt-card */
-    .kt-card {
-      background: #fff;
-      border: 1px solid #e5e7eb;
-      border-radius: 0.5rem;
-      box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
-    }
-    .kt-card-content { padding: 1.25rem; }
-    /* kt-form-label */
-    .kt-form-label {
-      display: block;
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: #374151;
-      margin-bottom: 0.375rem;
-    }
-    /* kt-table */
-    .kt-table { border-collapse: collapse; width: 100%; }
-    .kt-table th { text-align: start; font-weight: 600; padding: 0.75rem 1rem; border-bottom: 1px solid #e5e7eb; background: #f9fafb; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; }
-    .kt-table td { padding: 0.75rem 1rem; border-bottom: 1px solid #f3f4f6; font-size: 0.875rem; }
-    /* kt-badge */
-    .kt-badge { display: inline-flex; align-items: center; padding: 0.125rem 0.5rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 500; }
-    .kt-badge-primary { background: #dbeafe; color: #1e40af; }
-    .kt-badge-success { background: #dcfce7; color: #166534; }
-    .kt-badge-warning { background: #fef3c7; color: #92400e; }
-    .kt-badge-destructive { background: #fee2e2; color: #991b1b; }
-    .kt-badge-outline { background: #fff; border: 1px solid #e5e7eb; color: #374151; }
-    .kt-badge-secondary { background: #f3f4f6; color: #374151; }
-    /* sidebar base */
-    .kt-sidebar { background: #fff; }
-    .kt-menu-item { padding: 0.125rem 0.75rem; }
-    .kt-menu-link { display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 0.75rem; border-radius: 0.375rem; color: #374151; font-size: 0.875rem; font-weight: 500; text-decoration: none; }
-    .kt-menu-link:hover { background: #f3f4f6; }
-    .kt-menu-item-active > .kt-menu-link { background: #eff6ff; color: #1d4ed8; }
-    .kt-menu-icon { width: 20px; display: inline-flex; }
-    .kt-sidebar-header, .kt-sidebar-footer { padding: 1rem; }
-    .kt-sidebar-content { padding: 0.5rem 0; }
-    /* header */
-    .kt-header { background: #fff; }
-  </style>
   <script src="/panel-assets/js/panel-toast.js"></script>
   <script src="/panel-assets/js/panel-api.js"></script>
 </head>
-<body class="antialiased text-base text-foreground bg-background">
+<body class="antialiased flex h-full text-base text-foreground bg-background demo1 kt-sidebar-fixed kt-header-fixed">
+  <!-- Theme Mode -->
   <script>
     const defaultThemeMode = 'light';
     let themeMode;
@@ -137,9 +35,15 @@
       document.documentElement.classList.add(themeMode);
     }
   </script>
-
-  <div class="flex min-h-full">
+  <!-- End of Theme Mode -->
+  <!-- Page -->
+  <!-- Main -->
+  <div class="flex grow">
     <%- include('sidebar', { currentPath: typeof currentPath !== 'undefined' ? currentPath : '/panel', username: typeof username !== 'undefined' ? username : 'Admin' }) %>
-    <div class="flex flex-col grow min-w-0">
+    <!-- Wrapper -->
+    <div class="kt-wrapper flex grow flex-col">
       <%- include('header', { title: typeof title !== 'undefined' ? title : '', breadcrumbs: typeof breadcrumbs !== 'undefined' ? breadcrumbs : [], username: typeof username !== 'undefined' ? username : 'Admin' }) %>
-      <main class="grow overflow-x-auto" style="padding: 24px 28px;">
+      <!-- Content -->
+      <main class="grow pt-5" id="content" role="content">
+        <!-- Container -->
+        <div class="kt-container-fixed">

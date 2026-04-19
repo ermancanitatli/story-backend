@@ -1,80 +1,64 @@
 <%
-  const isDashboard = currentPath === '/panel';
-  const isUsers = typeof currentPath === 'string' && currentPath.startsWith('/panel/users');
-  const isStories = typeof currentPath === 'string' && currentPath.startsWith('/panel/stories');
-  const isNotifications = typeof currentPath === 'string' && currentPath.startsWith('/panel/notifications');
-  const isSettings = typeof currentPath === 'string' && currentPath.startsWith('/panel/settings');
-  const isAudit = typeof currentPath === 'string' && currentPath.startsWith('/panel/audit');
-  const isAdmins = typeof currentPath === 'string' && currentPath.startsWith('/panel/admins');
+  const _currentPath = typeof currentPath === 'string' ? currentPath : '/panel';
+  const isDashboard = _currentPath === '/panel';
+  const isUsers = _currentPath.startsWith('/panel/users');
+  const isStories = _currentPath.startsWith('/panel/stories');
+  const isNotifications = _currentPath.startsWith('/panel/notifications');
+  const isAudit = _currentPath.startsWith('/panel/audit');
+  const isAdmins = _currentPath.startsWith('/panel/admins');
+  const menuItems = [
+    { href: '/panel',               icon: 'ki-element-11',        title: 'Dashboard',   active: isDashboard },
+    { href: '/panel/users',         icon: 'ki-people',            title: 'Kullanıcılar', active: isUsers },
+    { href: '/panel/stories',       icon: 'ki-book',              title: 'Hikayeler',   active: isStories },
+    { href: '/panel/notifications', icon: 'ki-notification-bing', title: 'Bildirimler', active: isNotifications },
+    { href: '/panel/audit',         icon: 'ki-shield-tick',       title: 'Audit Log',   active: isAudit },
+    { href: '/panel/admins',        icon: 'ki-user-edit',         title: 'Adminler',    active: isAdmins },
+  ];
+  const _username = typeof username !== 'undefined' && username ? username : 'Admin';
+  const _initial = _username.charAt(0).toUpperCase();
 %>
-<div
-  class="kt-sidebar hidden lg:flex flex-col shrink-0 w-[280px] border-e border-border bg-background"
-  id="sidebar"
-  data-kt-drawer="true"
-  data-kt-drawer-class="kt-drawer kt-drawer-start top-0 bottom-0 flex"
-  data-kt-drawer-enable="true|lg:false"
->
+<!-- Sidebar -->
+<div class="kt-sidebar bg-background border-e border-e-border fixed top-0 bottom-0 z-20 hidden lg:flex flex-col items-stretch shrink-0 [--kt-drawer-enable:true] lg:[--kt-drawer-enable:false]" data-kt-drawer="true" data-kt-drawer-class="kt-drawer kt-drawer-start top-0 bottom-0" id="sidebar">
   <div class="kt-sidebar-header hidden lg:flex items-center relative justify-between px-3 lg:px-6 shrink-0" id="sidebar_header">
     <a href="/panel" class="flex items-center gap-2">
       <span class="text-xl font-bold text-primary">Story</span>
       <span class="text-xl font-semibold text-mono">Admin</span>
     </a>
-    <button class="kt-btn kt-btn-outline kt-btn-icon size-[30px] absolute start-full top-2/4 -translate-x-2/4 -translate-y-2/4 rtl:translate-x-2/4" id="sidebar_toggle" data-kt-toggle="body" data-kt-toggle-class="kt-sidebar-collapse">
-      <i class="ki-filled ki-exit-left"></i>
+    <button class="kt-btn kt-btn-outline kt-btn-icon size-[30px] absolute start-full top-2/4 -translate-x-2/4 -translate-y-2/4 rtl:translate-x-2/4" data-kt-toggle="body" data-kt-toggle-class="kt-sidebar-collapse" id="sidebar_toggle">
+      <i class="ki-filled ki-black-left-line kt-toggle-active:rotate-180 transition-all duration-300 rtl:translate rtl:rotate-180 rtl:kt-toggle-active:rotate-0"></i>
     </button>
   </div>
-
   <div class="kt-sidebar-content flex grow shrink-0 py-5 pe-2" id="sidebar_content">
-    <div class="kt-menu kt-menu-default flex flex-col grow gap-0.5 px-3 lg:px-6 w-full">
-      <div class="kt-menu-item <%= isDashboard ? 'kt-menu-item-active' : '' %>">
-        <a class="kt-menu-link" href="/panel">
-          <span class="kt-menu-icon"><i class="ki-filled ki-element-11"></i></span>
-          <span class="kt-menu-title">Dashboard</span>
-        </a>
+    <div class="kt-scrollable-y-hover grow shrink-0 flex ps-2 lg:ps-5 pe-1 lg:pe-3" data-kt-scrollable="true" data-kt-scrollable-dependencies="#sidebar_header" data-kt-scrollable-height="auto" data-kt-scrollable-offset="0px" data-kt-scrollable-wrappers="#sidebar_content" id="sidebar_scrollable">
+      <!-- Sidebar Menu -->
+      <div class="kt-menu flex flex-col grow gap-1" data-kt-menu="true" data-kt-menu-accordion-expand-all="false" id="sidebar_menu">
+        <% menuItems.forEach(item => { %>
+          <div class="kt-menu-item <%= item.active ? 'kt-menu-item-active' : '' %>">
+            <a class="kt-menu-link flex items-center grow border border-transparent gap-[10px] ps-[10px] pe-[10px] py-[6px] kt-menu-item-active:bg-accent/60 kt-menu-item-active:rounded-lg hover:bg-accent/60 hover:rounded-lg" href="<%= item.href %>" tabindex="0">
+              <span class="kt-menu-icon items-start text-muted-foreground w-[20px]">
+                <i class="ki-filled <%= item.icon %> text-lg kt-menu-item-active:text-primary"></i>
+              </span>
+              <span class="kt-menu-title text-sm font-medium text-foreground kt-menu-item-active:text-primary kt-menu-item-active:font-semibold kt-menu-link-hover:!text-primary">
+                <%= item.title %>
+              </span>
+            </a>
+          </div>
+        <% }) %>
       </div>
-      <div class="kt-menu-item <%= isUsers ? 'kt-menu-item-active' : '' %>">
-        <a class="kt-menu-link" href="/panel/users">
-          <span class="kt-menu-icon"><i class="ki-filled ki-people"></i></span>
-          <span class="kt-menu-title">Kullanıcılar</span>
-        </a>
-      </div>
-      <div class="kt-menu-item <%= isStories ? 'kt-menu-item-active' : '' %>">
-        <a class="kt-menu-link" href="/panel/stories">
-          <span class="kt-menu-icon"><i class="ki-filled ki-book"></i></span>
-          <span class="kt-menu-title">Hikayeler</span>
-        </a>
-      </div>
-      <div class="kt-menu-item <%= isNotifications ? 'kt-menu-item-active' : '' %>">
-        <a class="kt-menu-link" href="/panel/notifications">
-          <span class="kt-menu-icon"><i class="ki-filled ki-notification-bing"></i></span>
-          <span class="kt-menu-title">Bildirimler</span>
-        </a>
-      </div>
-      <div class="kt-menu-item <%= isAudit ? 'kt-menu-item-active' : '' %>">
-        <a class="kt-menu-link" href="/panel/audit">
-          <span class="kt-menu-icon"><i class="ki-filled ki-shield-tick"></i></span>
-          <span class="kt-menu-title">Audit Log</span>
-        </a>
-      </div>
-      <div class="kt-menu-item <%= isAdmins ? 'kt-menu-item-active' : '' %>">
-        <a class="kt-menu-link" href="/panel/admins">
-          <span class="kt-menu-icon"><i class="ki-filled ki-shield-search"></i></span>
-          <span class="kt-menu-title">Adminler</span>
-        </a>
-      </div>
+      <!-- End of Sidebar Menu -->
     </div>
   </div>
-
-  <div class="kt-sidebar-footer mt-auto p-4 border-t border-border">
+  <!-- Sidebar Footer -->
+  <div class="kt-sidebar-footer mt-auto p-4 border-t border-t-border shrink-0">
     <div class="flex items-center gap-3">
       <div class="flex items-center justify-center size-9 rounded-full bg-primary/10 text-primary font-semibold shrink-0">
-        <%= (typeof username !== 'undefined' && username ? username : 'A').charAt(0).toUpperCase() %>
+        <%= _initial %>
       </div>
-      <div class="flex-1 min-w-0 kt-sidebar-collapse-hidden">
-        <div class="text-sm font-medium text-mono truncate"><%= typeof username !== 'undefined' ? username : 'Admin' %></div>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-medium text-mono truncate"><%= _username %></div>
         <div class="text-xs text-secondary-foreground">Admin</div>
       </div>
-      <form method="post" action="/panel/logout" class="kt-sidebar-collapse-hidden shrink-0">
+      <form method="post" action="/panel/logout" class="shrink-0">
         <button type="submit" class="kt-btn kt-btn-icon kt-btn-ghost text-destructive" aria-label="Çıkış">
           <i class="ki-filled ki-exit-right"></i>
         </button>
@@ -82,3 +66,4 @@
     </div>
   </div>
 </div>
+<!-- End of Sidebar -->

@@ -1,10 +1,22 @@
-<footer class="kt-footer flex items-center justify-between flex-wrap gap-3 px-5 lg:px-7.5 py-4 border-t border-border text-sm text-secondary-foreground">
-  <div class="flex items-center gap-2">
-    <span>&copy; <%= new Date().getFullYear() %> Story Admin</span>
-    <span class="text-muted-foreground">v<%= (typeof process !== 'undefined' && process.env.npm_package_version) ? process.env.npm_package_version : '0.1.0' %></span>
+<%
+  const _version = (typeof process !== 'undefined' && process.env && process.env.npm_package_version) ? process.env.npm_package_version : '0.1.0';
+%>
+<!-- Footer -->
+<footer class="kt-footer">
+  <!-- Container -->
+  <div class="kt-container-fixed">
+    <div class="flex flex-col md:flex-row justify-center md:justify-between items-center gap-3 py-5">
+      <div class="flex order-2 md:order-1 gap-2 font-normal text-sm">
+        <span class="text-secondary-foreground">&copy; <%= new Date().getFullYear() %></span>
+        <span class="text-secondary-foreground">Story Admin</span>
+        <span class="text-muted-foreground">v<%= _version %></span>
+      </div>
+      <nav class="flex order-1 md:order-2 gap-4 font-normal text-sm text-secondary-foreground">
+        <a href="/docs" target="_blank" rel="noopener" class="hover:text-primary">API Docs</a>
+        <a href="https://storyapp.app" target="_blank" rel="noopener" class="hover:text-primary">Story App</a>
+      </nav>
+    </div>
   </div>
-  <nav class="flex items-center gap-4">
-    <a href="/docs" target="_blank" rel="noopener" class="hover:text-foreground">API Docs</a>
-    <a href="https://storyapp.app" target="_blank" rel="noopener" class="hover:text-foreground">Story App</a>
-  </nav>
+  <!-- End of Container -->
 </footer>
+<!-- End of Footer -->
