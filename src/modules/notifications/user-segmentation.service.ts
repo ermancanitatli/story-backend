@@ -1,6 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import Redis from 'ioredis';
+import * as crypto from 'crypto';
 import { User } from '../users/schemas/user.schema';
 import {
   SegmentName,
@@ -10,7 +12,21 @@ import {
 
 @Injectable()
 export class UserSegmentationService {
-  constructor(@InjectModel(User.name) private userModel: Model<User>) {}
+  constructor(
+    @InjectModel(User.name) private userModel: Model<User>,
+    @Inject('REDIS_CLIENT') private redis: Redis,
+  ) {}
+
+  private cacheKey(segment: string, opts?: SegmentOptions): string {
+    const idsHash = opts?.customUserIds?.length
+      ? crypto
+          .createHash('sha1')
+          .update([...opts.customUserIds].sort().join(','))
+          .digest('hex')
+          .slice(0, 16)
+      : 'none';
+    return `notif:estimate:${segment}:${idsHash}`;
+  }
 
   private buildQuery(segment: SegmentName, opts: SegmentOptions = {}): any {
     const now = Date.now();
@@ -63,8 +79,20 @@ export class UserSegmentationService {
     segment: SegmentName,
     opts: SegmentOptions = {},
   ): Promise<{ count: number }> {
+    const key = this.cacheKey(segment, opts);
+    try {
+      const cached = await this.redis.get(key);
+      if (cached !== null) return { count: parseInt(cached, 10) };
+    } catch {
+      /* cache read failure - fallback to DB */
+    }
     const query = this.buildQuery(segment, opts);
     const count = await this.userModel.countDocuments(query).exec();
+    try {
+      await this.redis.set(key, String(count), 'EX', 30);
+    } catch {
+      /* cache write failure - ignore */
+    }
     return { count };
   }
 }
