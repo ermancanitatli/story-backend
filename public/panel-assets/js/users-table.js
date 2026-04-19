@@ -152,7 +152,7 @@
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.edit-btn');
     if (btn) {
-      window.panelToast?.info("Edit modal USER-16 task'ıyla gelecek");
+      window.openUserEditModal?.(btn.dataset.id);
       return;
     }
     const banBtn = e.target.closest('.action-ban');
@@ -218,4 +218,6 @@
 
   updateSortIndicators();
   load();
+
+  window.reloadUsersTable = load;
 })();
