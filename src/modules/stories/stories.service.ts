@@ -181,13 +181,54 @@ export class StoriesService {
   async adminDuplicate(id: string): Promise<Story> {
     const original = await this.storyModel.findById(id).lean().exec();
     if (!original) throw new NotFoundException('Story not found');
-    const { _id, createdAt, updatedAt, ...rest } = original as any;
+    const { _id, createdAt, updatedAt, __v, ...rest } = original as any;
+
+    // Deep clone tüm nested yapılar: chapters, scenes, mediaItems, characters,
+    // coverImage, galleryImages, translations. Reference paylaşımı olmasın.
+    const cloned: any = JSON.parse(JSON.stringify(rest));
+
+    const { randomUUID } = await import('crypto');
+
+    // MediaItem ve image _id'lerini yenile — aksi halde Mongoose subdoc _id
+    // unique constraint çakışır veya iki story aynı _id'yi paylaşır.
+    if (Array.isArray(cloned.chapters)) {
+      cloned.chapters = cloned.chapters.map((ch: any) => ({
+        ...ch,
+        mediaItems: Array.isArray(ch.mediaItems)
+          ? ch.mediaItems.map((m: any) => ({ ...m, _id: randomUUID() }))
+          : [],
+        scenes: Array.isArray(ch.scenes)
+          ? ch.scenes.map((sc: any) => ({
+              ...sc,
+              mediaItems: Array.isArray(sc.mediaItems)
+                ? sc.mediaItems.map((m: any) => ({ ...m, _id: randomUUID() }))
+                : [],
+            }))
+          : [],
+      }));
+    }
+    if (Array.isArray(cloned.coverImage)) {
+      cloned.coverImage = cloned.coverImage.map((im: any) => ({
+        ...im,
+        _id: randomUUID(),
+      }));
+    }
+    if (Array.isArray(cloned.galleryImages)) {
+      cloned.galleryImages = cloned.galleryImages.map((im: any) => ({
+        ...im,
+        _id: randomUUID(),
+      }));
+    }
+    if (Array.isArray(cloned.characters)) {
+      cloned.characters = cloned.characters.map((c: any) => ({
+        ...c,
+        _id: randomUUID(),
+      }));
+    }
+
     const copy: any = {
-      ...rest,
-      title: (rest.title || '') + ' (copy)',
-      translations: rest.translations
-        ? JSON.parse(JSON.stringify(rest.translations))
-        : undefined,
+      ...cloned,
+      title: (cloned.title || '') + ' (copy)',
       isPublished: false,
       readCount: 0,
     };

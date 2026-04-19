@@ -40,6 +40,19 @@ export class CreateStoryDto {
   @Validate(EnTitleRequiredConstraint)
   translations!: StoryTranslationsMap;
 
+  // Legacy flat fields (EN defaults) — PATCH'lerde update için kabul edilir
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  summary?: string;
+
+  @IsOptional()
+  @IsString()
+  summarySafe?: string;
+
   @IsString()
   genre!: string;
 
@@ -79,4 +92,22 @@ export class CreateStoryDto {
   @IsOptional()
   @IsArray()
   characters?: any[];
+
+  // Chapter yapısı (title, summary, scenes, mediaItems)
+  @IsOptional()
+  @IsArray()
+  chapters?: any[];
+
+  // SEO / admin meta
+  @IsOptional()
+  @IsString()
+  metaTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  metaDescription?: string;
+
+  @IsOptional()
+  @IsString()
+  internalNotes?: string;
 }

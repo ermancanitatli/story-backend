@@ -1,6 +1,25 @@
 (function() {
   function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+  const STORY_ID = window.location.pathname.match(/\/panel\/stories\/([^\/]+)\/edit/)?.[1];
+  const PATCH_DEBOUNCE_MS = 600;
+  let patchTimer = null;
+
+  function persistChapters() {
+    if (!STORY_ID) return; // yeni hikaye modunda stories-edit.js önce POST yapar
+    clearTimeout(patchTimer);
+    patchTimer = setTimeout(async () => {
+      try {
+        await window.panelApi.patch(`/panel/api/stories/${STORY_ID}`, {
+          chapters: window.__story?.chapters || [],
+        });
+      } catch (err) {
+        console.error(err);
+        window.panelToast?.error(`Bölüm kaydedilemedi: ${err?.body?.message || err.message}`);
+      }
+    }, PATCH_DEBOUNCE_MS);
+  }
+
   function renderChapters() {
     const container = document.getElementById('chapters-list');
     const empty = document.getElementById('chapters-empty');
@@ -59,43 +78,52 @@
       const ci = parseInt(card.dataset.index, 10);
       card.querySelector('.chapter-title').addEventListener('input', e => {
         window.__story.chapters[ci].title = e.target.value;
+        persistChapters();
       });
       card.querySelector('.chapter-summary').addEventListener('input', e => {
         window.__story.chapters[ci].summary = e.target.value;
+        persistChapters();
       });
       card.querySelector('.chapter-remove').addEventListener('click', () => {
         if (!confirm('Bölüm silinsin mi?')) return;
         window.__story.chapters.splice(ci, 1);
         renderChapters();
+        persistChapters();
       });
       card.querySelector('.chapter-move-up')?.addEventListener('click', () => {
         if (ci === 0) return;
         const arr = window.__story.chapters;
         [arr[ci-1], arr[ci]] = [arr[ci], arr[ci-1]];
         renderChapters();
+        persistChapters();
       });
       card.querySelector('.chapter-move-down')?.addEventListener('click', () => {
         const arr = window.__story.chapters;
         if (ci === arr.length - 1) return;
         [arr[ci+1], arr[ci]] = [arr[ci], arr[ci+1]];
         renderChapters();
+        persistChapters();
       });
       card.querySelector('.scene-add').addEventListener('click', () => {
         window.__story.chapters[ci].scenes = window.__story.chapters[ci].scenes || [];
         window.__story.chapters[ci].scenes.push({ title: '', description: '', mediaItems: [] });
         renderChapters();
+        persistChapters();
       });
       card.querySelectorAll('.scene-item').forEach(scEl => {
         const si = parseInt(scEl.dataset.sceneIndex, 10);
         scEl.querySelector('.scene-title').addEventListener('input', e => {
           window.__story.chapters[ci].scenes[si].title = e.target.value;
+          persistChapters();
         });
         scEl.querySelector('.scene-description').addEventListener('input', e => {
           window.__story.chapters[ci].scenes[si].description = e.target.value;
+          persistChapters();
         });
         scEl.querySelector('.scene-remove').addEventListener('click', () => {
           window.__story.chapters[ci].scenes.splice(si, 1);
           renderChapters();
+          persistChapters();
         });
       });
     });
@@ -106,6 +134,7 @@
     window.__story.chapters = window.__story.chapters || [];
     window.__story.chapters.push({ title: '', summary: '', scenes: [] });
     renderChapters();
+    persistChapters();
   });
 
   setTimeout(() => { if (window.__story) renderChapters(); }, 700);

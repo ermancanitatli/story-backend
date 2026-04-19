@@ -177,6 +177,15 @@ export class Story extends Document {
 
   @Prop()
   legacyFirestoreId?: string; // Geçiş dönemi — eski Firestore doc ID
+
+  @Prop()
+  metaTitle?: string;
+
+  @Prop()
+  metaDescription?: string;
+
+  @Prop()
+  internalNotes?: string;
 }
 
 export const StorySchema = SchemaFactory.createForClass(Story);
