@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { NotificationService } from './notification.service';
 import { NotificationHistoryService } from './notification-history.service';
@@ -10,6 +10,8 @@ import {
 } from './schemas/notification-history.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { UsersModule } from '../users/users.module';
+import { BroadcastRateLimitGuard } from './guards/broadcast-rate-limit.guard';
+import { createRedisClient } from '../../config/redis.config';
 
 @Module({
   imports: [
@@ -24,11 +26,18 @@ import { UsersModule } from '../users/users.module';
     NotificationService,
     NotificationHistoryService,
     UserSegmentationService,
+    {
+      provide: 'REDIS_CLIENT',
+      useFactory: (config: ConfigService) => createRedisClient(config),
+      inject: [ConfigService],
+    },
+    BroadcastRateLimitGuard,
   ],
   exports: [
     NotificationService,
     NotificationHistoryService,
     UserSegmentationService,
+    BroadcastRateLimitGuard,
   ],
 })
 export class NotificationModule {}
