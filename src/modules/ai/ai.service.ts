@@ -118,6 +118,68 @@ export class AiService {
   }
 
   /**
+   * Rolling summary — chapter içinde eski sahneleri (son 2 hariç) özetler.
+   * Hem single-player hem multiplayer'da kullanılır. Her 5 step'te async olarak
+   * regenerate edilir. Eski summary varsa yenisiyle merge edilir (incremental).
+   *
+   * Hata durumunda boş string döner — service fallback raw history'ye düşer.
+   */
+  async summarizeRecentScenes(
+    newScenes: string[],
+    existingSummary?: string,
+  ): Promise<string> {
+    if (!newScenes || newScenes.length === 0) return '';
+
+    const scenesText = newScenes
+      .map((s, i) => `${i + 1}. ${s}`)
+      .join('\n\n');
+
+    const userContent = existingSummary
+      ? `Previous rolling summary:\n${existingSummary}\n\nNew scenes to merge:\n${scenesText}\n\n` +
+        `Update the summary incorporating the new scenes. Keep: character actions, decisions, promises made, key emotional shifts. Skip: atmospheric descriptions, weather, scenery. Output 2-4 sentences, past tense, factual tone, plain text only (no JSON, no bullets).`
+      : `Scenes:\n${scenesText}\n\nCompress into 2-4 sentences. Keep: character actions, decisions, promises, emotional shifts. Past tense, factual. Plain text only.`;
+
+    try {
+      const response = await fetch(this.apiUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are a story editor. Produce concise factual summaries. Do not invent facts. Do not use dramatic prose. Plain narrative past tense only.',
+            },
+            { role: 'user', content: userContent },
+          ],
+          temperature: 0.2,
+          max_tokens: 250,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        this.logger.warn(
+          `summarizeRecentScenes failed (${response.status}): ${errorText}`,
+        );
+        return '';
+      }
+
+      const data = await response.json();
+      return (data.choices?.[0]?.message?.content?.trim() || '') as string;
+    } catch (err) {
+      this.logger.warn(
+        `summarizeRecentScenes error: ${(err as Error).message}`,
+      );
+      return '';
+    }
+  }
+
+  /**
    * Chapter transition için "bridge summary" üretir — önceki chapter'ın son sahnelerini
    * 1-2 cümleye sıkıştırır, AI recency bias'ını kırmak için ana promptta raw history
    * yerine bu özet kullanılır. Tek seferlik çağrı, session.bridgeSummaries'e cache'lenir.

@@ -39,6 +39,22 @@ export class MultiplayerSession extends Document {
 
   @Prop() lastProgressId?: string;
   @Prop() completedAt?: Date;
+
+  // Chapter bridge özetleri (single-player story-session.schema ile aynı pattern).
+  // Chapter transition zaten multiplayer'da aktif değil ama ileride eklendiğinde hazır.
+  @Prop({ type: Object, default: {} })
+  bridgeSummaries?: Record<string, string>;
+
+  // Rolling summary — turn içinde biriken eski sahnelerin özeti.
+  // Her 5 turn'de async olarak regenerate edilir.
+  @Prop({
+    type: Object,
+    default: () => ({ text: '', updatedAtStep: 0 }),
+  })
+  rollingSummary?: {
+    text: string;
+    updatedAtStep: number;
+  };
 }
 
 export const MultiplayerSessionSchema = SchemaFactory.createForClass(MultiplayerSession);

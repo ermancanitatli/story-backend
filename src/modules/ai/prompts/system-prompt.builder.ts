@@ -111,6 +111,13 @@ export interface PromptParams {
   // Cache'lenir (session.bridgeSummaries). Raw history'nin recency bias'ını kırar.
   previousChapterBridge?: string;
 
+  // === Rolling summary + chapter bridges (memory tiers) ===
+  // rollingSummary: mevcut chapter içinde son 2 sahne hariç önceki sahnelerin özeti.
+  // chapterBridges: geçmiş chapter'ların tek cümlelik özetleri (sıralı).
+  // İkisi de boşsa recentHistory array'i 10 sahne raw olarak basılır (backward compat).
+  rollingSummary?: string;
+  chapterBridges?: string[];
+
   // === Pacing control (chapter transition timing) ===
   // 'none'     → AI'a pacing sinyali gönderme, normal akış
   // 'soft'     → min step'e ulaştık, AI "doğal kapanış mı?" değerlendirsin (suggestChapterTransition flag döndürebilir)
@@ -356,6 +363,9 @@ export function buildUserMessage(params: {
   previousChapterBridge?: string;
   currentChapter?: number;
   transitionDirective?: TransitionDirective;
+  // === Memory tiers ===
+  rollingSummary?: string;
+  chapterBridges?: string[];
 }): string {
   if (params.type === 'start') {
     return 'Begin the story. Set the scene and present the first set of choices.';
@@ -366,10 +376,27 @@ export function buildUserMessage(params: {
   let message = '';
 
   if (isTransition && params.previousChapterBridge) {
-    // Raw history yerine bridge özet — "archived past events" olarak işaretli
+    // Transition modu: bridge özet devrede, tier'ları kullanma
     message += `## Archived Past Events (previous chapter, CLOSED)\n${params.previousChapterBridge}\n\n`;
-  } else if (params.recentHistory && params.recentHistory.length > 0) {
-    message += `## Recent story context:\n${params.recentHistory.join('\n')}\n\n`;
+  } else {
+    // Normal akış: 3 katmanlı memory
+    // Tier 3 — chapter bridges (önceki chapter'ların özetleri)
+    if (params.chapterBridges && params.chapterBridges.length > 0) {
+      message += `## Story So Far (previous chapters, archived — do not mimic this prose style)\n${params.chapterBridges.join('\n')}\n\n`;
+    }
+    // Tier 2 — current chapter rolling summary
+    if (params.rollingSummary && params.rollingSummary.trim().length > 0) {
+      message += `## Recent Events (earlier in this chapter, summarized)\n${params.rollingSummary}\n\n`;
+    }
+    // Tier 1 — son sahneler raw
+    if (params.recentHistory && params.recentHistory.length > 0) {
+      const tierLabel =
+        (params.chapterBridges && params.chapterBridges.length > 0) ||
+        (params.rollingSummary && params.rollingSummary.trim().length > 0)
+          ? '## Immediate Scenes (verbatim — mirror this tone and style)'
+          : '## Recent story context:';
+      message += `${tierLabel}\n${params.recentHistory.join('\n')}\n\n`;
+    }
   }
 
   message += `The player chose: "${params.userChoice}"\n\n`;

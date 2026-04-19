@@ -260,9 +260,38 @@ export class MultiplayerService {
 
     // Generate next scene
     const recentDocs = await this.progressModel.find({ sessionId: session._id }).sort({ turnOrder: -1 }).limit(10);
-    const recentHistory = recentDocs.reverse().map((p) => p.currentScene);
+    // ⚠️ reverse() in-place — orijinali koru ki memory tier'ları okurken bozulmasın
+    const allRecentScenes = [...recentDocs].reverse().map((p) => p.currentScene).filter(Boolean);
 
     const clone = session.storyClone || {};
+
+    // === Memory tiers (rolling summary + chapter bridges) ===
+    const rollingEnabled = (process.env.ENABLE_ROLLING_SUMMARY ?? 'true').toLowerCase() !== 'false';
+    const IMMEDIATE_SCENES_COUNT = 2;
+    let recentHistory = allRecentScenes;
+    let tierRollingSummary: string | undefined;
+    let tierChapterBridges: string[] | undefined;
+
+    if (rollingEnabled) {
+      const rollingText = (session as any).rollingSummary?.text?.trim();
+      const allBridges = Object.entries(
+        (session as any).bridgeSummaries || {},
+      ) as [string, string][];
+
+      if (allBridges.length > 0) {
+        tierChapterBridges = allBridges
+          .filter(([chKey]) => parseInt(chKey, 10) < session.currentChapter)
+          .sort(([a], [b]) => parseInt(a, 10) - parseInt(b, 10))
+          .map(([chKey, summary]) => `Chapter ${chKey}: ${summary}`);
+        if (tierChapterBridges.length === 0) tierChapterBridges = undefined;
+      }
+      if (rollingText) tierRollingSummary = rollingText;
+
+      // Tier'lardan biri doluysa Tier 1 (son 2 sahne) ile sınırla
+      if (tierRollingSummary || tierChapterBridges) {
+        recentHistory = allRecentScenes.slice(-IMMEDIATE_SCENES_COUNT);
+      }
+    }
 
     const isBilingual = session.hostLanguageCode !== session.guestLanguageCode;
     const languages = isBilingual
@@ -281,8 +310,17 @@ export class MultiplayerService {
       guestName: session.guestName,
       activePlayerName: session.nextPlayerId?.toString() === session.hostId?.toString() ? session.hostName : session.guestName,
       languages,
+      rollingSummary: tierRollingSummary,
+      chapterBridges: tierChapterBridges,
+      recentHistory,
     });
-    const userMessage = buildUserMessage({ type: 'continue', userChoice: choice.text, recentHistory });
+    const userMessage = buildUserMessage({
+      type: 'continue',
+      userChoice: choice.text,
+      recentHistory,
+      rollingSummary: tierRollingSummary,
+      chapterBridges: tierChapterBridges,
+    });
 
     const grokResponse = await this.aiService.callGrokAPI({ systemPrompt, userMessage });
 
@@ -337,7 +375,82 @@ export class MultiplayerService {
     }
     await this.sessionModel.findByIdAndUpdate(sessionId, sessionUpdate);
 
+    // === ASYNC: Rolling summary update (fire-and-forget) ===
+    const ROLLING_SUMMARY_INTERVAL = 5;
+    const MIN_STEPS_FOR_ROLLING = 3;
+    const ROLLING_SOURCE_WINDOW = 5;
+    if (
+      rollingEnabled &&
+      !grokResponse.isEnding &&
+      newTurn >= MIN_STEPS_FOR_ROLLING &&
+      newTurn % ROLLING_SUMMARY_INTERVAL === 0
+    ) {
+      this.scheduleMultiplayerRollingSummary(
+        sessionId,
+        newTurn,
+        (session as any).rollingSummary?.text || '',
+      );
+    }
+
     return progress;
+  }
+
+  /**
+   * Multiplayer rolling summary — fire-and-forget.
+   * Aynı pattern: son ROLLING_SOURCE_WINDOW + 2 turn çek, Tier 1 (son 2) hariç kalanları özetle.
+   */
+  private async scheduleMultiplayerRollingSummary(
+    sessionId: string,
+    atTurn: number,
+    existingSummary: string,
+  ): Promise<void> {
+    try {
+      const fetchLimit = 5 + 2; // window + tier1
+      const docs = await this.progressModel
+        .find({ sessionId: new Types.ObjectId(sessionId) })
+        .sort({ turnOrder: -1 })
+        .limit(fetchLimit)
+        .exec();
+      if (docs.length <= 2) return;
+
+      const orderedAsc = [...docs].reverse();
+      const scenesToSummarize = orderedAsc
+        .slice(0, orderedAsc.length - 2)
+        .map((p) => p.currentScene)
+        .filter(Boolean);
+      if (scenesToSummarize.length === 0) return;
+
+      const newSummary = await this.aiService.summarizeRecentScenes(
+        scenesToSummarize,
+        existingSummary || undefined,
+      );
+      if (!newSummary) return;
+
+      const res = await this.sessionModel.updateOne(
+        {
+          _id: new Types.ObjectId(sessionId),
+          $or: [
+            { 'rollingSummary.updatedAtStep': { $lt: atTurn } },
+            { rollingSummary: { $exists: false } },
+            { 'rollingSummary.updatedAtStep': { $exists: false } },
+          ],
+        },
+        {
+          $set: {
+            rollingSummary: { text: newSummary, updatedAtStep: atTurn },
+          },
+        },
+      );
+      if (res.modifiedCount > 0) {
+        this.logger.log(
+          `[rolling-summary][multi] session=${sessionId} turn=${atTurn} len=${newSummary.length}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `[rolling-summary][multi] fail session=${sessionId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   async cancelSession(sessionId: string, userId: string, reason?: string): Promise<MultiplayerSession> {

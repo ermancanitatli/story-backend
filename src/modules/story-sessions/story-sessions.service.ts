@@ -11,6 +11,14 @@ import { SubmitChoiceDto } from './dto/submit-choice.dto';
 
 const EMOTION_MULTIPLIER = 3;
 
+// Memory / rolling summary kuralları
+const ROLLING_SUMMARY_INTERVAL = 5;       // Her N step'te async regenerate
+const IMMEDIATE_SCENES_COUNT = 2;         // Son N sahne raw (Tier 1)
+const ROLLING_SOURCE_WINDOW = 5;          // Özete sokulacak sahne sayısı (son N, Tier 1 hariç)
+const MIN_STEPS_FOR_ROLLING = 3;          // Bu step'ten önce summary üretmeye gerek yok
+const isRollingEnabled = () =>
+  (process.env.ENABLE_ROLLING_SUMMARY ?? 'true').toLowerCase() !== 'false';
+
 // Chapter transition kuralları (esnek pacing):
 //   1..MIN_STEPS-1   → AI'a sorma, normal akış
 //   MIN_STEPS..SOFT_STEPS → AI kararı: chapter kapanışı yapmak istiyor mu?
@@ -343,6 +351,38 @@ export class StorySessionsService {
     const promptChapterNumber =
       transitionMode === 'entering' ? session.currentChapter + 1 : session.currentChapter;
 
+    // === MEMORY TIERS (Tier 1 raw + Tier 2 rolling + Tier 3 bridges) ===
+    // Transition modda devre dışı — previousChapterBridge o path'i zaten kapatıyor.
+    let effectiveRecentHistory = recentHistory;
+    let tierRollingSummary: string | undefined;
+    let tierChapterBridges: string[] | undefined;
+
+    if (transitionMode === 'none' && isRollingEnabled()) {
+      const rollingText = (session as any).rollingSummary?.text?.trim();
+      const allBridges = Object.entries(
+        (session as any).bridgeSummaries || {},
+      ) as [string, string][];
+
+      // Tier 3 — geçmiş chapter özetleri (current chapter'dan öncekiler, sıralı)
+      if (allBridges.length > 0) {
+        tierChapterBridges = allBridges
+          .filter(([chKey]) => parseInt(chKey, 10) < session.currentChapter)
+          .sort(([a], [b]) => parseInt(a, 10) - parseInt(b, 10))
+          .map(([chKey, summary]) => `Chapter ${chKey}: ${summary}`);
+        if (tierChapterBridges.length === 0) tierChapterBridges = undefined;
+      }
+
+      // Tier 2 — rolling summary
+      if (rollingText) {
+        tierRollingSummary = rollingText;
+      }
+
+      // Tier 1 — son 2 sahne raw (tier'lardan herhangi biri doluysa)
+      if (tierRollingSummary || tierChapterBridges) {
+        effectiveRecentHistory = recentHistory.slice(-IMMEDIATE_SCENES_COUNT);
+      }
+    }
+
     // Prompt params
     const promptParams: PromptParams = {
       storyTitle: clone?.title || 'Untitled',
@@ -356,7 +396,9 @@ export class StorySessionsService {
       languageCode: params.languageCode,
       emotionalStates: session.emotionalStates as any,
       censorship: true,
-      recentHistory,
+      recentHistory: effectiveRecentHistory,
+      rollingSummary: tierRollingSummary,
+      chapterBridges: tierChapterBridges,
       transitionMode,
       transitionDirective,
       previousChapterBridge,
@@ -370,7 +412,9 @@ export class StorySessionsService {
     const userMessage = buildUserMessage({
       type,
       userChoice,
-      recentHistory,
+      recentHistory: effectiveRecentHistory,
+      rollingSummary: tierRollingSummary,
+      chapterBridges: tierChapterBridges,
       transitionMode,
       previousChapterBridge,
       currentChapter: promptChapterNumber,
@@ -495,6 +539,11 @@ export class StorySessionsService {
       lastProgressId: progress._id.toString(),
     };
 
+    // Chapter transition: rollingSummary sıfırla (yeni chapter yeni özet)
+    if (isChapterTransition) {
+      sessionUpdate.rollingSummary = { text: '', updatedAtStep: newStep };
+    }
+
     if (grokResponse.isEnding) {
       sessionUpdate.status = 'completed';
       sessionUpdate.completedAt = new Date();
@@ -506,7 +555,91 @@ export class StorySessionsService {
       `Progress created: session=${session._id}, step=${newStep}, chapter=${newChapter}${grokResponse.isEnding ? ' [ENDING]' : ''}`,
     );
 
+    // === ASYNC: Rolling summary update (fire-and-forget) ===
+    // Trigger: her ROLLING_SUMMARY_INTERVAL step'te bir, transition değilse,
+    // en az MIN_STEPS_FOR_ROLLING step oynanmış olmalı, feature flag açık.
+    if (
+      isRollingEnabled() &&
+      !isChapterTransition &&
+      !grokResponse.isEnding &&
+      newStep >= MIN_STEPS_FOR_ROLLING &&
+      newStep % ROLLING_SUMMARY_INTERVAL === 0
+    ) {
+      this.scheduleRollingSummaryUpdate(
+        session._id.toString(),
+        newStep,
+        (session as any).rollingSummary?.text || '',
+      );
+    }
+
     return progress;
+  }
+
+  /**
+   * Async rolling summary update — fire-and-forget. User response'u beklemez.
+   * Son N sahne (ROLLING_SOURCE_WINDOW, Tier 1 olan son 2 sahne hariç) + mevcut
+   * rollingSummary ile merge edilir. Yazarken optimistic lock
+   * (`$lt: newStep`) ile eski bir step için yazım geçmesini engeller.
+   */
+  private async scheduleRollingSummaryUpdate(
+    sessionId: string,
+    atStep: number,
+    existingSummary: string,
+  ): Promise<void> {
+    try {
+      // Son N+Tier1 sahne çek (Tier 1 hariç olacak — en yeni 2 sahne özete girmez)
+      const fetchLimit = ROLLING_SOURCE_WINDOW + IMMEDIATE_SCENES_COUNT;
+      const docs = await this.progressModel
+        .find({ sessionId: new Types.ObjectId(sessionId) })
+        .sort({ stepNumber: -1 })
+        .limit(fetchLimit)
+        .exec();
+
+      if (docs.length <= IMMEDIATE_SCENES_COUNT) return; // özetlenecek yeterince sahne yok
+
+      // Eskiden yeniye sırala, Tier 1 (son 2) hariç al
+      const orderedAsc = [...docs].reverse();
+      const scenesToSummarize = orderedAsc
+        .slice(0, orderedAsc.length - IMMEDIATE_SCENES_COUNT)
+        .map((p) => p.currentScene)
+        .filter(Boolean);
+
+      if (scenesToSummarize.length === 0) return;
+
+      const newSummary = await this.aiService.summarizeRecentScenes(
+        scenesToSummarize,
+        existingSummary || undefined,
+      );
+
+      if (!newSummary) return;
+
+      // Optimistic lock: yalnız updatedAtStep bizim step'ten küçük olan dokümanı güncelle
+      const res = await this.sessionModel.updateOne(
+        {
+          _id: new Types.ObjectId(sessionId),
+          $or: [
+            { 'rollingSummary.updatedAtStep': { $lt: atStep } },
+            { rollingSummary: { $exists: false } },
+            { 'rollingSummary.updatedAtStep': { $exists: false } },
+          ],
+        },
+        {
+          $set: {
+            rollingSummary: { text: newSummary, updatedAtStep: atStep },
+          },
+        },
+      );
+
+      if (res.modifiedCount > 0) {
+        this.logger.log(
+          `[rolling-summary] session=${sessionId} step=${atStep} len=${newSummary.length}`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(
+        `[rolling-summary] update failed for session=${sessionId}: ${(err as Error).message}`,
+      );
+    }
   }
 
   /**

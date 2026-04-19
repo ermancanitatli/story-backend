@@ -70,6 +70,19 @@ export class StorySession extends Document {
   // için tek seferlik Grok çağrısıyla üretilir, sonraki transition adımlarında tekrar kullanılır.
   @Prop({ type: Object, default: {} })
   bridgeSummaries?: Record<string, string>;
+
+  // Rolling summary — chapter içinde biriken eski sahnelerin özeti.
+  // AI'a her çağrıda son 2 sahne raw + rollingSummary (önceki sahnelerin özeti) gider.
+  // Her 5 step'te async olarak regenerate edilir, chapter transition'da sıfırlanır.
+  // updatedAtStep: bu step'e kadarki sahneleri kapsıyor; daha yeni sahneler henüz özetlenmedi.
+  @Prop({
+    type: Object,
+    default: () => ({ text: '', updatedAtStep: 0 }),
+  })
+  rollingSummary?: {
+    text: string;
+    updatedAtStep: number;
+  };
 }
 
 export const StorySessionSchema = SchemaFactory.createForClass(StorySession);
