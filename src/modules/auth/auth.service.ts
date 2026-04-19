@@ -1,4 +1,10 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
@@ -31,7 +37,21 @@ export class AuthService {
   async anonymousLogin(deviceId: string) {
     let user = await this.usersService.findByDeviceId(deviceId);
 
-    if (!user) {
+    if (user) {
+      if (user.isDeleted) {
+        throw new HttpException(
+          { code: 'USER_DELETED', message: 'Hesap silindi' },
+          HttpStatus.GONE,
+        );
+      }
+      if (user.isBanned) {
+        throw new ForbiddenException({
+          code: 'USER_BANNED',
+          bannedUntil: user.bannedUntil,
+          message: 'Hesabınız askıya alındı',
+        });
+      }
+    } else {
       user = await this.usersService.create({ deviceId });
     }
 
