@@ -180,6 +180,29 @@ export class User extends Document {
 
   @Prop()
   oneSignalPlayerId?: string;
+
+  // -- Moderation / lifecycle --
+
+  @Prop({ default: false })
+  isBanned: boolean;
+
+  @Prop()
+  bannedAt?: Date;
+
+  @Prop()
+  banReason?: string;
+
+  @Prop()
+  bannedUntil?: Date; // null = permanent
+
+  @Prop({ default: false })
+  isDeleted: boolean;
+
+  @Prop()
+  deletedAt?: Date;
+
+  @Prop()
+  anonymizedAt?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
@@ -189,3 +212,5 @@ UserSchema.index({ isFake: 1 });
 UserSchema.index({ 'premium.isPremium': 1 });
 UserSchema.index({ online: 1, lastSeen: -1 });
 UserSchema.index({ legacyFirebaseId: 1 }, { sparse: true });
+UserSchema.index({ isBanned: 1 });
+UserSchema.index({ isDeleted: 1 });
