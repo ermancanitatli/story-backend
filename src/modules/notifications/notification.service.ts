@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
+import { BroadcastNotificationDto } from './dto/broadcast-notification.dto';
+import { OneSignalBroadcastResponse } from './dto/onesignal-response.dto';
+
+const ONESIGNAL_MAX_EXTERNAL_IDS_PER_REQUEST = 2000;
+const ONESIGNAL_NOTIFICATIONS_URL = 'https://onesignal.com/api/v1/notifications';
 
 @Injectable()
 export class NotificationService {
@@ -88,5 +93,118 @@ export class NotificationService {
     } catch (err) {
       this.logger.warn(`Push to user ${userId} failed: ${(err as Error).message}`);
     }
+  }
+
+  /**
+   * Multilingual broadcast push (v2 aliases API).
+   *
+   * - `includeExternalIds` kullanıldığında `include_aliases.external_id` v2 sözdizimi uygulanır.
+   * - 2000+ id varsa otomatik olarak 2000'lik chunk'lara bölünür, her chunk ayrı çağrı yapar.
+   * - Credentials eksikse *silently* yutmak yerine **throw** eder (config sorunu gürültüyle farkedilsin).
+   * - OneSignal response'u parse edilip `{ id, recipients, errors }` döndürülür.
+   *   Birden fazla batch varsa: recipients toplanır, ilk id/errors dönen set edilir.
+   */
+  async sendBroadcast(dto: BroadcastNotificationDto): Promise<OneSignalBroadcastResponse> {
+    if (!this.appId || !this.apiKey) {
+      throw new Error(
+        'OneSignal credentials are not configured (ONESIGNAL_APP_ID / ONESIGNAL_REST_API_KEY required for sendBroadcast)',
+      );
+    }
+
+    const basePayload: Record<string, any> = {
+      app_id: this.appId,
+      headings: dto.headings,
+      contents: dto.contents,
+    };
+
+    if (dto.bigPicture) {
+      basePayload.big_picture = dto.bigPicture;
+      basePayload.ios_attachments = { default: dto.bigPicture };
+    }
+    if (dto.url) basePayload.url = dto.url;
+    if (dto.data) basePayload.data = dto.data;
+    if (dto.sendAfter) basePayload.send_after = dto.sendAfter;
+    if (dto.filters && dto.filters.length > 0) basePayload.filters = dto.filters;
+
+    const externalIds = dto.includeExternalIds ?? [];
+
+    // Filtered / segment-wide broadcast (no external ids)
+    if (externalIds.length === 0) {
+      if (!dto.filters || dto.filters.length === 0) {
+        // Hedef yoksa OneSignal built-in "Subscribed Users" segmentine yolla.
+        basePayload.included_segments = ['Subscribed Users'];
+      }
+      return this.postNotification(basePayload);
+    }
+
+    // External id targeting — chunk to 2000
+    const chunks = this.chunk(externalIds, ONESIGNAL_MAX_EXTERNAL_IDS_PER_REQUEST);
+
+    let aggregatedRecipients = 0;
+    let firstId = '';
+    let firstErrors: any = undefined;
+
+    for (const chunk of chunks) {
+      const payload = {
+        ...basePayload,
+        include_aliases: { external_id: chunk },
+        target_channel: 'push',
+      };
+
+      const response = await this.postNotification(payload);
+      aggregatedRecipients += response.recipients ?? 0;
+      if (!firstId) firstId = response.id;
+      if (!firstErrors && response.errors) firstErrors = response.errors;
+    }
+
+    return {
+      id: firstId,
+      recipients: aggregatedRecipients,
+      errors: firstErrors,
+    };
+  }
+
+  private async postNotification(body: Record<string, any>): Promise<OneSignalBroadcastResponse> {
+    const response = await fetch(ONESIGNAL_NOTIFICATIONS_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${this.apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const text = await response.text();
+    let parsed: any = {};
+    try {
+      parsed = text ? JSON.parse(text) : {};
+    } catch {
+      // Non-JSON response
+    }
+
+    if (!response.ok) {
+      const msg = `OneSignal broadcast failed (${response.status}): ${text}`;
+      this.logger.error(msg);
+      throw new Error(msg);
+    }
+
+    this.logger.log(
+      `OneSignal broadcast ok id=${parsed.id ?? '?'} recipients=${parsed.recipients ?? 0}`,
+    );
+
+    return {
+      id: parsed.id ?? '',
+      recipients: typeof parsed.recipients === 'number' ? parsed.recipients : 0,
+      errors: parsed.errors,
+    };
+  }
+
+  private chunk<T>(arr: T[], size: number): T[][] {
+    if (size <= 0) return [arr];
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+      out.push(arr.slice(i, i + size));
+    }
+    return out;
   }
 }

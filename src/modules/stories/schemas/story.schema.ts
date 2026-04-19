@@ -63,6 +63,36 @@ export class StoryChapter {
   mediaItems?: MediaItem[];
 }
 
+@Schema({ _id: false })
+export class StoryTranslation {
+  @Prop()
+  title?: string;
+
+  @Prop()
+  summary?: string;
+
+  @Prop()
+  summarySafe?: string;
+}
+
+// Supported locales (runtime validation yok, sadece referans/type hint):
+// 'en' | 'tr' | 'ar' | 'de' | 'es' | 'fr' | 'it' | 'ja' | 'ko' | 'pt' | 'ru' | 'zh'
+export type SupportedLocale =
+  | 'en'
+  | 'tr'
+  | 'ar'
+  | 'de'
+  | 'es'
+  | 'fr'
+  | 'it'
+  | 'ja'
+  | 'ko'
+  | 'pt'
+  | 'ru'
+  | 'zh';
+
+export type StoryTranslations = Partial<Record<SupportedLocale, StoryTranslation>>;
+
 // -- Main Story Schema --
 
 @Schema({ timestamps: true, collection: 'stories' })
@@ -78,6 +108,11 @@ export class Story extends Document {
 
   @Prop()
   summarySafe?: string; // Censored version
+
+  // Multi-locale çeviriler. Key = locale code (en, tr, ar, ...), value = StoryTranslation.
+  // Default EN değerleri legacy flat alanlarda (title/summary/summarySafe) kalır; getTranslation() helper'ı fallback zincirini yönetir.
+  @Prop({ type: Object, default: {} })
+  translations: StoryTranslations;
 
   @Prop({ type: [StoryCharacter], default: [] })
   characters: StoryCharacter[];
