@@ -6,17 +6,22 @@
  *     npx ts-node scripts/test-chapter-transition.ts
  *
  * ENV:
- *   BASE_URL   — default http://localhost:3000
- *   STORY_ID   — zorunlu
- *   MAX_STEPS  — default 30
- *   LANGUAGE   — default 'tr'
- *   SEED       — opsiyonel, tekrar edilebilir rasgelelik için
- *   DRY_PRINT  — 'full' ise tüm scene basılır; default 'short' (140 char)
- *   CLEANUP    — '1' ise bitişte session silinir
+ *   BASE_URL     — default http://localhost:3000
+ *   STORY_ID     — zorunlu
+ *   MAX_STEPS    — default 30
+ *   LANGUAGE     — default 'tr'
+ *   SEED         — opsiyonel, tekrar edilebilir rasgelelik için
+ *   DRY_PRINT    — 'full' ise tüm scene basılır; default 'short' (140 char)
+ *   CLEANUP      — '1' ise bitişte session silinir
+ *   INSPECT_SUMMARY — '1' ise her 5 step sonrası DB'den rollingSummary/
+ *                    bridgeSummaries çekilip basılır (default 1)
+ *   MONGO_URI    — inspection için; default prod URI
  *
  * Script pacing assertion'ları yapar (MIN=5, SOFT=7, MAX=10) ve
- * fail olursa exit(1) döner.
+ * fail olursa exit(1) döner. Özet kalitesi için INSPECT_SUMMARY logları.
  */
+
+import { MongoClient, ObjectId } from 'mongodb';
 
 type ApiHeaders = Record<string, string>;
 
@@ -27,6 +32,10 @@ const LANGUAGE = process.env.LANGUAGE || 'tr';
 const PRINT_MODE = process.env.DRY_PRINT === 'full' ? 'full' : 'short';
 const CLEANUP = process.env.CLEANUP === '1';
 const SEED = process.env.SEED ? parseInt(process.env.SEED, 10) : null;
+const INSPECT_SUMMARY = (process.env.INSPECT_SUMMARY ?? '1') !== '0';
+const MONGO_URI =
+  process.env.MONGO_URI ||
+  'mongodb://root:StoryMongo2026x@91.98.177.117:40777/story_prod?authSource=admin&directConnection=true';
 
 // Mirror service constants — referans:
 // src/modules/story-sessions/story-sessions.service.ts
@@ -106,8 +115,82 @@ function formatRow(r: StepRow): string {
   return ` ${step}  ${ch}  ${cstep}    ${sug.padEnd(4)}  ${tr}  ${end} ${stype}  ${scene}`;
 }
 
+interface SummarySnapshot {
+  atStep: number;
+  rollingText?: string;
+  rollingUpdatedAtStep?: number;
+  bridgeKeys?: string[];
+  bridgesFull?: Record<string, string>;
+}
+
+const summarySnapshots: SummarySnapshot[] = [];
+
+async function inspectSummaries(
+  mongoClient: MongoClient | null,
+  sessionId: string,
+  atStep: number,
+): Promise<SummarySnapshot | null> {
+  if (!mongoClient) return null;
+  try {
+    const db = mongoClient.db();
+    const s: any = await db
+      .collection('story_sessions')
+      .findOne({ _id: new ObjectId(sessionId) });
+    if (!s) return null;
+    const snap: SummarySnapshot = {
+      atStep,
+      rollingText: s.rollingSummary?.text || '',
+      rollingUpdatedAtStep: s.rollingSummary?.updatedAtStep || 0,
+      bridgeKeys: Object.keys(s.bridgeSummaries || {}),
+      bridgesFull: s.bridgeSummaries || {},
+    };
+    return snap;
+  } catch (err) {
+    console.warn(`[inspect] mongo okuma hatası: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+function printSummarySnapshot(snap: SummarySnapshot) {
+  console.log('');
+  console.log(`┌─── [SUMMARY INSPECTION @ step ${snap.atStep}] ──────────────────────────────`);
+  if (snap.rollingText && snap.rollingText.trim().length > 0) {
+    console.log(`│ 📝 Rolling Summary (updatedAtStep=${snap.rollingUpdatedAtStep})`);
+    console.log(`│    len=${snap.rollingText.length} chars`);
+    const wrapped = snap.rollingText.match(/.{1,120}/g) || [];
+    wrapped.forEach((line) => console.log(`│    ${line}`));
+  } else {
+    console.log(`│ 📝 Rolling Summary: (henüz yok)`);
+  }
+  if (snap.bridgeKeys && snap.bridgeKeys.length > 0) {
+    console.log(`│ 🌉 Chapter Bridges: ${snap.bridgeKeys.length} adet (chapter ${snap.bridgeKeys.join(', ')})`);
+    for (const k of snap.bridgeKeys) {
+      const txt = snap.bridgesFull?.[k] || '';
+      const preview = txt.substring(0, 100) + (txt.length > 100 ? '…' : '');
+      console.log(`│    ch${k}: ${preview}`);
+    }
+  } else {
+    console.log(`│ 🌉 Chapter Bridges: (yok — henüz transition olmadı)`);
+  }
+  console.log(`└──────────────────────────────────────────────────────────────────────`);
+  console.log('');
+}
+
 async function main() {
-  console.log(`[config] BASE=${BASE_URL} STORY=${STORY_ID} MAX=${MAX_STEPS} LANG=${LANGUAGE} SEED=${SEED ?? 'random'}`);
+  console.log(`[config] BASE=${BASE_URL} STORY=${STORY_ID} MAX=${MAX_STEPS} LANG=${LANGUAGE} SEED=${SEED ?? 'random'} INSPECT_SUMMARY=${INSPECT_SUMMARY}`);
+
+  // Mongo client (inspection için) — opsiyonel, başarısız olursa sadece summary logları gösterilmez
+  let mongoClient: MongoClient | null = null;
+  if (INSPECT_SUMMARY) {
+    try {
+      mongoClient = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 3000 });
+      await mongoClient.connect();
+      console.log(`[inspect] mongo bağlandı`);
+    } catch (err) {
+      console.warn(`[inspect] mongo bağlanamadı, summary inspection kapalı: ${(err as Error).message}`);
+      mongoClient = null;
+    }
+  }
 
   // 1) Anonim auth
   const deviceId = `test-chapter-${Date.now()}-${Math.floor(rand() * 10000)}`;
@@ -212,6 +295,28 @@ async function main() {
         headers,
       );
       pushRow(lastProgress, step, choiceText);
+
+      // Rolling summary inspection — her 5 step'te bir DB'den kontrol
+      // (async summary fire-and-forget olduğu için 2 saniye bekle, propagation)
+      if (mongoClient && step % 5 === 0 && step >= 5) {
+        await new Promise((r) => setTimeout(r, 2500));
+        const snap = await inspectSummaries(mongoClient, sessionId, step);
+        if (snap) {
+          summarySnapshots.push(snap);
+          printSummarySnapshot(snap);
+        }
+      }
+
+      // Chapter transition sonrası bridge summary kontrolü (1 saniye sonra)
+      if (mongoClient && lastProgress.isChapterTransition) {
+        await new Promise((r) => setTimeout(r, 1200));
+        const snap = await inspectSummaries(mongoClient, sessionId, step);
+        if (snap) {
+          summarySnapshots.push(snap);
+          console.log(`\n[bridge check — chapter transition @ step ${step}]`);
+          printSummarySnapshot(snap);
+        }
+      }
     } catch (err) {
       console.error(`[step ${step}] failed:`, (err as Error).message);
       break;
@@ -320,6 +425,70 @@ async function main() {
   passes.forEach((p) => console.log('  ✓ ' + p));
   fails.forEach((f) => console.log('  ✗ ' + f));
 
+  // === SUMMARY ASSERTIONS (rolling + bridge) ===
+  if (mongoClient && INSPECT_SUMMARY) {
+    console.log(`\n[summary inspection] ${summarySnapshots.length} snapshot alındı`);
+
+    // Final snapshot — script sonunda DB state
+    await new Promise((r) => setTimeout(r, 2000)); // propagation için bekle
+    const finalSnap = await inspectSummaries(mongoClient, sessionId, rows.length);
+    if (finalSnap) {
+      console.log(`\n[summary] FINAL STATE:`);
+      printSummarySnapshot(finalSnap);
+    }
+
+    // Assertions
+    const summaryPasses: string[] = [];
+    const summaryFails: string[] = [];
+
+    // 1. Eğer en az 5 step oynandıysa rolling summary oluşmuş olmalı
+    if (rows.length >= 5) {
+      const lastRolling = finalSnap?.rollingText?.trim();
+      if (lastRolling && lastRolling.length > 20) {
+        summaryPasses.push(
+          `Rolling summary üretilmiş: ${lastRolling.length} chars, updatedAtStep=${finalSnap?.rollingUpdatedAtStep}`,
+        );
+      } else {
+        summaryFails.push(
+          `Rolling summary BOŞ — beklenmedi (rows=${rows.length}, dev server ENABLE_ROLLING_SUMMARY kapalı olabilir)`,
+        );
+      }
+    }
+
+    // 2. Chapter transition olduysa bridgeSummaries dolu olmalı
+    const transitions = rows.filter((r) => r.isTransition).length;
+    if (transitions > 0) {
+      const bridgeCount = finalSnap?.bridgeKeys?.length || 0;
+      if (bridgeCount >= transitions) {
+        summaryPasses.push(
+          `Chapter bridges üretilmiş: ${bridgeCount} bridge / ${transitions} transition`,
+        );
+      } else {
+        summaryFails.push(
+          `Bridge eksik — ${transitions} transition oldu ama ${bridgeCount} bridge var`,
+        );
+      }
+    }
+
+    // 3. Snapshot'lar arasında rolling summary büyüyor mu / güncelleniyor mu?
+    const updatedSteps = summarySnapshots
+      .map((s) => s.rollingUpdatedAtStep || 0)
+      .filter((x) => x > 0);
+    const uniqueUpdates = Array.from(new Set(updatedSteps));
+    if (rows.length >= 10 && uniqueUpdates.length >= 1) {
+      summaryPasses.push(
+        `Rolling summary update'leri: ${uniqueUpdates.length} farklı step'te yenilendi (${uniqueUpdates.join(',')})`,
+      );
+    }
+
+    console.log('\n[summary assertions]');
+    summaryPasses.forEach((p) => console.log('  ✓ ' + p));
+    summaryFails.forEach((f) => console.log('  ✗ ' + f));
+
+    fails.push(...summaryFails);
+    passes.push(...summaryPasses);
+  }
+
   // 6) Cleanup
   if (CLEANUP) {
     try {
@@ -330,6 +499,10 @@ async function main() {
     }
   } else {
     console.log(`\n[cleanup] atlandı — sid=${sessionId} DB'de kalıyor (CLEANUP=1 ile sil)`);
+  }
+
+  if (mongoClient) {
+    await mongoClient.close();
   }
 
   if (fails.length > 0) {
