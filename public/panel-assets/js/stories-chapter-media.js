@@ -562,8 +562,8 @@
 
     const isVid = isVideoItem(item);
     modalPreview.innerHTML = isVid
-      ? `<video src="${esc(item.url)}" controls class="max-h-[60vh] max-w-full rounded"></video>`
-      : `<img src="${esc(item.url)}" alt="" class="max-h-[60vh] max-w-full object-contain rounded"/>`;
+      ? `<video src="${esc(item.url)}" controls style="max-height:400px;width:auto;max-width:100%;" class="rounded bg-black"></video>`
+      : `<img src="${esc(item.url)}" alt="" style="max-height:400px;width:auto;max-width:100%;" class="object-contain rounded"/>`;
     modalUrl.value = item.url || '';
     modalTitleInput.value = item.title || '';
     modalAlt.value = item.alt || '';
