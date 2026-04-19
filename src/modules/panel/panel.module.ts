@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { PanelController } from './panel.controller';
 import { PanelNotificationsController } from './panel-notifications.controller';
 import { PanelApiController } from './panel-api.controller';
+import { PanelStoriesController } from './panel-stories.controller';
 import { AdminUsersService } from './admin-users.service';
 import { AdminAuditLogService } from './admin-audit-log.service';
 import { AdminUsersManagementService } from './admin-users-management.service';
@@ -15,8 +16,10 @@ import { Friendship, FriendshipSchema } from '../friendships/schemas/friendship.
 import { StorySession, StorySessionSchema } from '../story-sessions/schemas/story-session.schema';
 import { AuditInterceptor } from './interceptors/audit.interceptor';
 import { PageViewInterceptor } from './interceptors/page-view.interceptor';
+import { SuperadminGuard } from './guards/superadmin.guard';
 import { SocketModule } from '../socket/socket.module';
 import { NotificationModule } from '../notifications/notification.module';
+import { StoriesModule } from '../stories/stories.module';
 
 @Module({
   imports: [
@@ -31,14 +34,21 @@ import { NotificationModule } from '../notifications/notification.module';
     ]),
     forwardRef(() => SocketModule),
     NotificationModule,
+    StoriesModule,
   ],
-  controllers: [PanelController, PanelNotificationsController, PanelApiController],
+  controllers: [
+    PanelController,
+    PanelNotificationsController,
+    PanelApiController,
+    PanelStoriesController,
+  ],
   providers: [
     AdminUsersService,
     AdminAuditLogService,
     AdminUsersManagementService,
     AuditInterceptor,
     PageViewInterceptor,
+    SuperadminGuard,
   ],
   exports: [
     AdminUsersService,

@@ -273,6 +273,17 @@ export class PanelController {
     });
   }
 
+  @Get('users')
+  @Render('panel/users')
+  showUsers(@Req() req: Request & { session: PanelSession }) {
+    return {
+      title: 'Kullanıcılar',
+      currentPath: req.path,
+      username: req.session?.username || 'Admin',
+      breadcrumbs: [{ label: 'Kullanıcılar' }],
+    };
+  }
+
   @Get('audit')
   async showAudit(
     @Req() req: Request & { session: PanelSession },
