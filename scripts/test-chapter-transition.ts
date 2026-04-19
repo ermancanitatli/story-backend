@@ -686,13 +686,23 @@ async function runMultiplayer() {
   const turnLogs: Array<{ turn: number; activeId: string; chapter: number; suggest?: boolean; transition: boolean; scene: string }> = [];
   let currentActiveId: string = session.activePlayerId;
 
-  // İlk progress çek
-  let lastProgress: any = await call(
-    'GET',
-    `/api/multiplayer/${sessionId}/progress`,
-    undefined,
-    currentActiveId === host.userId ? host.headers : guest.headers,
-  );
+  // İlk progress çek — ilk sahne async üretilebilir, biraz bekle
+  let lastProgress: any = null;
+  for (let attempt = 0; attempt < 15; attempt++) {
+    lastProgress = await call(
+      'GET',
+      `/api/multiplayer/${sessionId}/progress`,
+      undefined,
+      currentActiveId === host.userId ? host.headers : guest.headers,
+    );
+    if (lastProgress && lastProgress.currentScene && Array.isArray(lastProgress.choices) && lastProgress.choices.length > 0) {
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  if (!lastProgress || !lastProgress.currentScene) {
+    throw new Error('ilk sahne 22 saniye içinde üretilmedi — backend generateInitialScene log\'ları kontrol et');
+  }
   const firstTurn = lastProgress?.turnOrder || 1;
   turnLogs.push({
     turn: firstTurn,

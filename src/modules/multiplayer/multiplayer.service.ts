@@ -241,6 +241,18 @@ export class MultiplayerService {
       updated!.hostGender && updated!.guestGender
     ) {
       updated = await this.sessionModel.findByIdAndUpdate(sessionId, { phase: 'playing' }, { new: true });
+
+      // İlk AI sahnesini üret — manuel invite flow'unda da matchmaking'dekiyle aynı davranış
+      if (updated && !updated.lastProgressId) {
+        try {
+          await this.generateInitialScene(updated);
+          this.logger.log(`[mp] initial scene generated for session ${sessionId}`);
+        } catch (err) {
+          this.logger.error(
+            `[mp] Initial scene generation failed for ${sessionId}: ${(err as Error).message}`,
+          );
+        }
+      }
     }
 
     return updated!;
