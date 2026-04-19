@@ -1,3 +1,8 @@
+import { initSentry } from './common/sentry/sentry.init';
+// Sentry must be initialized before any other imports/requires that create
+// HTTP servers or outgoing HTTP clients so auto-instrumentation can patch them.
+initSentry();
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -46,6 +51,13 @@ async function bootstrap() {
   app.use(expressLayouts);
   app.set('layout', false); // default: layout YOK — controller opt-in ile açar
   app.useStaticAssets(join(__dirname, '..', 'public'));
+
+  // Expose Sentry client DSN to all EJS templates (layout reads it for optional browser SDK init).
+  // Empty string when unset so EJS `if (sentryDsnClient)` branch is false.
+  const httpAdapterInstance: any = app.getHttpAdapter().getInstance();
+  httpAdapterInstance.locals = httpAdapterInstance.locals || {};
+  httpAdapterInstance.locals.sentryDsnClient = process.env.SENTRY_DSN_CLIENT || '';
+  httpAdapterInstance.locals.appEnv = process.env.APP_ENV || process.env.NODE_ENV || 'development';
 
   // Admin panel: express-session (Redis store, mevcut Redis'i kullanır)
   // SESSION_SECRET env'de yoksa otomatik üretilir ve .env'e yazılır.

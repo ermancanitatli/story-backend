@@ -13,6 +13,18 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
   <link rel="stylesheet" href="/panel-assets/vendors/keenicons/styles.bundle.css" />
   <link rel="stylesheet" href="/panel-assets/css/styles.css" />
+  <% if (typeof sentryDsnClient !== 'undefined' && sentryDsnClient) { %>
+    <script src="https://browser.sentry-cdn.com/7.100.0/bundle.min.js" crossorigin="anonymous"></script>
+    <script>
+      if (window.Sentry) {
+        Sentry.init({
+          dsn: '<%= sentryDsnClient %>',
+          environment: '<%= typeof appEnv !== "undefined" ? appEnv : "development" %>',
+          tracesSampleRate: 0.1,
+        });
+      }
+    </script>
+  <% } %>
 </head>
 <body class="antialiased flex h-full text-base text-foreground bg-background demo1 kt-sidebar-fixed kt-header-fixed">
   <!-- Theme Mode -->
