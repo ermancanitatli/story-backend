@@ -33,6 +33,10 @@ RUN yarn install --frozen-lockfile --ignore-engines --production && \
 COPY --from=build /app/dist ./dist
 COPY ecosystem.config.js ./
 
+# Admin panel assets: EJS views + static files
+COPY views ./views
+COPY public ./public
+
 EXPOSE 3000
 
 ENV ECOSYSTEM_CONFIG=ecosystem.config.js

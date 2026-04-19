@@ -27,6 +27,7 @@ import { FakeUsersModule } from './modules/fake-users/fake-users.module';
 import { HealthModule } from './modules/health/health.module';
 import { SocketModule } from './modules/socket/socket.module';
 import { NotificationModule } from './modules/notifications/notification.module';
+import { PanelModule } from './modules/panel/panel.module';
 
 @Module({
   imports: [
@@ -91,6 +92,7 @@ import { NotificationModule } from './modules/notifications/notification.module'
     HealthModule,
     SocketModule,
     NotificationModule,
+    PanelModule,
   ],
   providers: [
     {

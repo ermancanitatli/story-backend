@@ -5,10 +5,14 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
+import * as session from 'express-session';
+import RedisStore from 'connect-redis';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
     rawBody: true,
   });
@@ -17,6 +21,40 @@ async function bootstrap() {
   const port = configService.get<number>('PORT', 3000);
   const prefix = configService.get<string>('API_PREFIX', 'api');
   const corsOrigin = configService.get<string>('CORS_ORIGIN', '*');
+
+  // Admin panel: EJS view engine + static assets (public/panel-assets)
+  app.setBaseViewsDir(join(__dirname, '..', 'views'));
+  app.setViewEngine('ejs');
+  app.useStaticAssets(join(__dirname, '..', 'public'));
+
+  // Admin panel: express-session (Redis store, mevcut Redis'i kullanır)
+  const sessionSecret = configService.get<string>('SESSION_SECRET');
+  if (!sessionSecret) {
+    console.warn('⚠️ SESSION_SECRET not set — admin panel session will not persist securely');
+  }
+  const sessionHost = configService.get<string>('REDIS_HOST', 'localhost');
+  const sessionPort = configService.get<number>('REDIS_PORT', 6379);
+  const sessionPassword = configService.get<string>('REDIS_PASSWORD') || undefined;
+  const sessionRedis = new Redis({
+    host: sessionHost,
+    port: sessionPort,
+    password: sessionPassword,
+  });
+  app.use(
+    session({
+      store: new RedisStore({ client: sessionRedis, prefix: 'panel-sess:' }),
+      name: 'panel.sid',
+      secret: sessionSecret || 'dev-insecure-secret-change-me',
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 24 * 60 * 60 * 1000, // 24 saat
+      },
+    }),
+  );
 
   // Socket.IO Redis Adapter (cluster-safe)
   const redisHost = configService.get<string>('REDIS_HOST', 'localhost');
@@ -44,8 +82,10 @@ async function bootstrap() {
     console.warn('⚠️ Redis adapter failed, using default Socket.IO adapter:', (err as Error).message);
   }
 
-  // Global prefix
-  app.setGlobalPrefix(prefix);
+  // Global prefix — /panel rotalarını hariç tut (admin panel üst düzey path'te)
+  app.setGlobalPrefix(prefix, {
+    exclude: ['panel', 'panel/(.*)'],
+  });
 
   // CORS
   app.enableCors({
