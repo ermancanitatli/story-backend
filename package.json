@@ -39,16 +39,19 @@
     "class-validator": "^0.14.1",
     "connect-redis": "^7.1.1",
     "ejs": "^5.0.2",
+    "express-ejs-layouts": "^2.5.1",
     "express-session": "^1.19.0",
     "ioredis": "^5.4.0",
     "mongoose": "^8.5.0",
+    "nest-winston": "^1.10.2",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.0",
     "swagger-ui-express": "^5.0.1",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "winston": "^3.19.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.0",

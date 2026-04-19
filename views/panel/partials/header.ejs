@@ -1,1 +1,59 @@
-<!-- PANEL-07: Header buraya gelecek -->
+<header class="kt-header flex items-center justify-between gap-4 px-5 lg:px-7.5 h-[70px] border-b border-border bg-background" data-kt-sticky="true">
+  <!-- Sol: hamburger (mobile) + title + breadcrumbs -->
+  <div class="flex items-center gap-4">
+    <button class="kt-btn kt-btn-icon lg:hidden" data-kt-drawer-toggle="#sidebar" aria-label="Menüyü aç">
+      <i class="ki-filled ki-burger-menu"></i>
+    </button>
+    <div class="flex flex-col">
+      <% if (typeof title !== 'undefined' && title) { %>
+        <h1 class="text-lg font-semibold text-mono"><%= title %></h1>
+      <% } %>
+      <% if (typeof breadcrumbs !== 'undefined' && breadcrumbs.length > 0) { %>
+        <nav class="flex items-center gap-1 text-xs text-secondary-foreground mt-0.5">
+          <% breadcrumbs.forEach((bc, i) => { %>
+            <% if (bc.href) { %>
+              <a href="<%= bc.href %>" class="hover:text-foreground"><%= bc.label %></a>
+            <% } else { %>
+              <span><%= bc.label %></span>
+            <% } %>
+            <% if (i < breadcrumbs.length - 1) { %>
+              <i class="ki-filled ki-right text-xs text-muted-foreground"></i>
+            <% } %>
+          <% }); %>
+        </nav>
+      <% } %>
+    </div>
+  </div>
+
+  <!-- Sağ: avatar dropdown -->
+  <div class="flex items-center gap-3">
+    <div class="kt-dropdown" data-kt-dropdown="true" data-kt-dropdown-trigger="click">
+      <button class="kt-btn kt-btn-icon kt-btn-ghost rounded-full" data-kt-dropdown-toggle="true" aria-label="Kullanıcı menüsü">
+        <div class="flex items-center justify-center size-9 rounded-full bg-primary/10 text-primary font-semibold">
+          <%= (typeof username !== 'undefined' && username ? username : 'A').charAt(0).toUpperCase() %>
+        </div>
+      </button>
+      <div class="kt-dropdown-menu w-56" data-kt-dropdown-menu="true">
+        <div class="flex items-center gap-3 px-4 py-3 border-b border-border">
+          <div class="flex items-center justify-center size-10 rounded-full bg-primary/10 text-primary font-semibold">
+            <%= (typeof username !== 'undefined' && username ? username : 'A').charAt(0).toUpperCase() %>
+          </div>
+          <div class="flex flex-col">
+            <span class="text-sm font-medium text-mono"><%= typeof username !== 'undefined' ? username : 'Admin' %></span>
+            <span class="text-xs text-secondary-foreground">Admin</span>
+          </div>
+        </div>
+        <a href="/panel/account/password" class="kt-dropdown-menu-item flex items-center gap-2 px-4 py-2 text-sm hover:bg-accent">
+          <i class="ki-filled ki-lock text-base"></i>
+          <span>Şifre Değiştir</span>
+        </a>
+        <form method="post" action="/panel/logout" class="block">
+          <button type="submit" class="kt-dropdown-menu-item flex items-center gap-2 px-4 py-2 text-sm hover:bg-accent w-full text-start text-destructive">
+            <i class="ki-filled ki-exit-right text-base"></i>
+            <span>Çıkış Yap</span>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</header>

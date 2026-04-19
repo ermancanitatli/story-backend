@@ -6,17 +6,26 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
 import * as session from 'express-session';
+import * as expressLayouts from 'express-ejs-layouts';
 import RedisStore from 'connect-redis';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { WinstonModule } from 'nest-winston';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { resolveSessionSecret } from './modules/panel/session-secret.helper';
+import { winstonConfig } from './common/logger/winston.config';
+import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
     rawBody: true,
+    logger: WinstonModule.createLogger(winstonConfig),
   });
+
+  // Request correlation id — must run before everything else so downstream
+  // middleware / guards / controllers can read req.id and ALS store.
+  app.use(requestIdMiddleware);
 
   // Behind Coolify/Traefik reverse proxy: trust first proxy so req.secure / X-Forwarded-Proto are honored.
   app.set('trust proxy', 1);
@@ -29,6 +38,8 @@ async function bootstrap() {
   // Admin panel: EJS view engine + static assets (public/panel-assets)
   app.setBaseViewsDir(join(__dirname, '..', 'views'));
   app.setViewEngine('ejs');
+  app.use(expressLayouts);
+  app.set('layout', false); // default: layout YOK — controller opt-in ile açar
   app.useStaticAssets(join(__dirname, '..', 'public'));
 
   // Admin panel: express-session (Redis store, mevcut Redis'i kullanır)
