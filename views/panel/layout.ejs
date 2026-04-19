@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html class="h-full" data-kt-theme="true" data-kt-theme-mode="light" dir="ltr" lang="tr">
+<head>
+  <title><%= typeof title !== 'undefined' && title ? title + ' — Story Admin' : 'Story Admin' %></title>
+  <meta charset="utf-8" />
+  <meta name="robots" content="follow, index" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+  <meta name="description" content="Story Admin Panel" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/panel-assets/media/app/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/panel-assets/media/app/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/panel-assets/media/app/favicon-16x16.png" />
+  <link rel="shortcut icon" href="/panel-assets/media/app/favicon.ico" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="/panel-assets/vendors/keenicons/styles.bundle.css" />
+  <link rel="stylesheet" href="/panel-assets/css/styles.css" />
+</head>
+<body class="antialiased flex h-full text-base text-foreground bg-background demo1 kt-sidebar-fixed kt-header-fixed">
+  <!-- Theme Mode -->
+  <script>
+    const defaultThemeMode = 'light';
+    let themeMode;
+    if (document.documentElement) {
+      if (localStorage.getItem('kt-theme')) {
+        themeMode = localStorage.getItem('kt-theme');
+      } else if (document.documentElement.hasAttribute('data-kt-theme-mode')) {
+        themeMode = document.documentElement.getAttribute('data-kt-theme-mode');
+      } else {
+        themeMode = defaultThemeMode;
+      }
+      if (themeMode === 'system') {
+        themeMode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      document.documentElement.classList.add(themeMode);
+    }
+  </script>
+
+  <div class="flex grow">
+    <%- include('partials/sidebar', { currentPath: typeof currentPath !== 'undefined' ? currentPath : '/panel', username: typeof username !== 'undefined' ? username : 'Admin' }) %>
+    <div class="flex flex-col grow">
+      <%- include('partials/header', { title: typeof title !== 'undefined' ? title : '', breadcrumbs: typeof breadcrumbs !== 'undefined' ? breadcrumbs : [], username: typeof username !== 'undefined' ? username : 'Admin' }) %>
+      <main class="grow p-5 lg:p-7.5"><%- body %></main>
+      <%- include('partials/footer') %>
+    </div>
+  </div>
+
+  <script src="/panel-assets/js/core.bundle.js"></script>
+  <script src="/panel-assets/vendors/ktui/ktui.min.js"></script>
+</body>
+</html>
