@@ -23,6 +23,8 @@ type PanelSession = {
   username?: string;
   save: (cb: (err: any) => void) => void;
   destroy: (cb: (err: any) => void) => void;
+  touch: () => void;
+  cookie: { maxAge?: number };
 };
 
 @Controller('panel')

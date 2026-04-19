@@ -86,6 +86,33 @@ export class ApiJsonExceptionFilter implements ExceptionFilter {
 
     const requestId = request.id;
 
+    // /panel/* rotalarında HTML fallback render et (scoped PanelHtmlExceptionFilter
+    // sadece PanelController'a hit eden istekleri yakalar; unknown /panel/*
+    // route'ları buraya düşer).
+    const path = request.path || request.url || '';
+    if (path === '/panel' || path.startsWith('/panel/')) {
+      const template =
+        status === 404
+          ? 'panel/404'
+          : status >= 500
+            ? 'panel/500'
+            : 'panel/error';
+      try {
+        response.status(status).render(template, {
+          title: `Hata ${status}`,
+          statusCode: status,
+          message,
+          requestId,
+        });
+        return;
+      } catch (renderErr) {
+        this.logger.error(
+          `Panel HTML fallback render failed: ${(renderErr as Error).message}`,
+        );
+        // JSON fallback'e düş
+      }
+    }
+
     response.status(status).json({
       error: {
         code,

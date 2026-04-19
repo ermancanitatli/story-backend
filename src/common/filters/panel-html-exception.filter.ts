@@ -50,9 +50,15 @@ export class PanelHtmlExceptionFilter implements ExceptionFilter {
     }
 
     const title = `Hata ${status}`;
+    const template =
+      status === 404
+        ? 'panel/404'
+        : status >= 500
+          ? 'panel/500'
+          : 'panel/error';
 
     try {
-      response.status(status).render('panel/error', {
+      response.status(status).render(template, {
         title,
         statusCode: status,
         message,

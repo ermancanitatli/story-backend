@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html class="h-full" lang="tr">
+<head>
+  <meta charset="utf-8"><title>500 — Sunucu Hatası</title>
+  <link rel="stylesheet" href="/panel-assets/vendors/keenicons/styles.bundle.css"/>
+  <link rel="stylesheet" href="/panel-assets/css/styles.css"/>
+</head>
+<body class="antialiased flex items-center justify-center h-full bg-background">
+  <div class="text-center max-w-md p-8">
+    <div class="flex justify-center mb-4">
+      <i class="ki-filled ki-shield-cross text-[96px] text-destructive"></i>
+    </div>
+    <h1 class="text-5xl font-bold text-mono mb-3">500</h1>
+    <p class="text-lg text-secondary-foreground mb-2">Bir şeyler ters gitti.</p>
+    <p class="text-sm text-muted-foreground mb-6">Teknik ekip bilgilendirildi. Lütfen birazdan tekrar dene.</p>
+    <% if (typeof requestId !== 'undefined' && requestId) { %>
+      <p class="text-xs text-muted-foreground mb-6">Request ID: <%= requestId %></p>
+    <% } %>
+    <a href="/panel" class="kt-btn kt-btn-primary">Panele Dön</a>
+    <% if (typeof message !== 'undefined' && message && (process.env.NODE_ENV !== 'production')) { %>
+      <pre class="text-xs text-destructive mt-6 text-start overflow-auto max-h-40 p-3 bg-destructive/5 rounded"><%= message %></pre>
+    <% } %>
+  </div>
+</body>
+</html>
