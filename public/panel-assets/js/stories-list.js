@@ -57,8 +57,10 @@
     tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center">Yükleniyor...</td></tr>';
     try {
       const res = await window.panelApi.get('/panel/api/stories?' + params.toString());
-      const stories = res.stories || [];
-      total = res.total || 0;
+      const stories = Array.isArray(res)
+        ? res
+        : res.stories || res.data || res.items || [];
+      total = (Array.isArray(res) ? stories.length : res.total ?? res.count) || 0;
       if (stories.length === 0) {
         tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-muted-foreground">Hikaye bulunamadı</td></tr>';
         return;
@@ -84,8 +86,10 @@
         </tr>`;
       }).join('');
       document.getElementById('stories-total').textContent = `${total} hikaye`;
-    } catch (e) {
-      tbody.innerHTML = '<tr><td colspan="8" class="p-8 text-center text-destructive">Hata</td></tr>';
+    } catch (err) {
+      const msg = err?.message || err?.status || 'bilinmiyor';
+      tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-destructive">Hata: ${esc(msg)}</td></tr>`;
+      console.error('Stories list load error:', err);
     }
   }
 

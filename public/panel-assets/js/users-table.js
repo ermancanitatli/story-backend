@@ -46,8 +46,11 @@
       const res = await window.panelApi.get(
         '/panel/api/users?' + params.toString(),
       );
-      const users = res.users || [];
-      totalCount = res.total || 0;
+      const users = Array.isArray(res)
+        ? res
+        : res.users || res.data || res.items || [];
+      totalCount =
+        (Array.isArray(res) ? users.length : res.total ?? res.count) || 0;
       if (users.length === 0) {
         tbody.innerHTML =
           '<tr><td colspan="8" class="p-8 text-center text-muted-foreground">Kullanıcı bulunamadı</td></tr>';
@@ -90,9 +93,10 @@
         .join('');
       document.getElementById('users-total').textContent =
         `${totalCount} kullanıcı`;
-    } catch (e) {
-      tbody.innerHTML =
-        '<tr><td colspan="8" class="p-8 text-center text-destructive">Hata oluştu</td></tr>';
+    } catch (err) {
+      const msg = err?.message || err?.status || 'bilinmiyor';
+      tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-destructive">Hata: ${esc(msg)}</td></tr>`;
+      console.error('Users table load error:', err);
     }
   }
 
