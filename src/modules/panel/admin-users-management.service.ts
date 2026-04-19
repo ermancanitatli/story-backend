@@ -1,9 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId, Types } from 'mongoose';
 import { User } from '../users/schemas/user.schema';
 import { Friendship } from '../friendships/schemas/friendship.schema';
 import { StorySession } from '../story-sessions/schemas/story-session.schema';
+import { AdminAuditLogService } from './admin-audit-log.service';
+import { AdminUpdateUserDto } from './dto/admin-update-user.dto';
 
 export interface ListUsersFilter {
   search?: string;
@@ -36,6 +38,7 @@ export class AdminUsersManagementService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Friendship.name) private friendshipModel: Model<Friendship>,
     @InjectModel(StorySession.name) private storySessionModel: Model<StorySession>,
+    private auditLogService: AdminAuditLogService,
   ) {}
 
   async listUsers(filter: ListUsersFilter = {}): Promise<ListUsersResult> {
@@ -91,5 +94,87 @@ export class AdminUsersManagementService {
     ]);
     if (!user) throw new NotFoundException('User not found');
     return { user, friendCount, recentSessions, storyCount };
+  }
+
+  async updateUserByAdmin(
+    id: string,
+    dto: AdminUpdateUserDto,
+    actor: { adminId: string; adminUsername: string },
+  ): Promise<User> {
+    if (!isValidObjectId(id)) throw new NotFoundException('User not found');
+
+    const before = await this.userModel.findById(id).lean().exec();
+    if (!before) throw new NotFoundException('User not found');
+
+    // userHandle çakışma kontrolü
+    if (dto.userHandle && dto.userHandle !== (before as any).userHandle) {
+      const existing = await this.userModel
+        .findOne({
+          userHandle: dto.userHandle,
+          _id: { $ne: id },
+        })
+        .lean()
+        .exec();
+      if (existing) throw new ConflictException('Bu kullanıcı adı zaten kullanımda');
+    }
+
+    const updatePayload: any = {};
+    if (dto.displayName !== undefined) updatePayload.displayName = dto.displayName;
+    if (dto.userHandle !== undefined) updatePayload.userHandle = dto.userHandle;
+    if (dto.email !== undefined) updatePayload.email = dto.email;
+    if (dto.credits !== undefined) updatePayload.credits = dto.credits;
+    if (dto.premium) {
+      if (dto.premium.isPremium !== undefined)
+        updatePayload['premium.isPremium'] = dto.premium.isPremium;
+      if (dto.premium.plan !== undefined)
+        updatePayload['premium.plan'] = dto.premium.plan;
+      if (dto.premium.expiresAt !== undefined)
+        updatePayload['premium.expiresAt'] = new Date(dto.premium.expiresAt);
+    }
+
+    const updated = await this.userModel
+      .findByIdAndUpdate(id, { $set: updatePayload }, { new: true })
+      .lean()
+      .exec();
+
+    // Audit log
+    try {
+      if (dto.credits !== undefined && (before as any).credits !== dto.credits) {
+        await this.auditLogService.record({
+          adminId: actor.adminId,
+          adminUsername: actor.adminUsername,
+          action: 'UPDATE_CREDITS',
+          targetUserId: id,
+          targetUserHandle: (before as any).userHandle,
+          metadata: { from: (before as any).credits, to: dto.credits },
+        });
+      }
+      if (dto.premium) {
+        const wasPremium = (before as any).premium?.isPremium === true;
+        const willPremium = dto.premium.isPremium === true;
+        if (wasPremium !== willPremium) {
+          await this.auditLogService.record({
+            adminId: actor.adminId,
+            adminUsername: actor.adminUsername,
+            action: 'UPDATE_PREMIUM',
+            targetUserId: id,
+            targetUserHandle: (before as any).userHandle,
+            metadata: { from: wasPremium, to: willPremium, plan: dto.premium.plan },
+          });
+        }
+      }
+      await this.auditLogService.record({
+        adminId: actor.adminId,
+        adminUsername: actor.adminUsername,
+        action: 'UPDATE_USER',
+        targetUserId: id,
+        targetUserHandle: (before as any).userHandle,
+        metadata: { fields: Object.keys(updatePayload) },
+      });
+    } catch (err) {
+      // Audit failure sessiz
+    }
+
+    return updated as any;
   }
 }
