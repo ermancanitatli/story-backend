@@ -96,6 +96,46 @@ export class PanelController {
     });
   }
 
+  /**
+   * Extend current panel session: touches the session so connect-redis
+   * rewrites the TTL with the full cookie.maxAge, then returns the new
+   * expiresAt (ISO) for the client to reschedule its warning modal.
+   */
+  @Post('api/session/extend')
+  extendSession(
+    @Req() req: Request & { session: PanelSession },
+    @Res() res: Response,
+  ) {
+    req.session.touch();
+    req.session.save((err) => {
+      if (err) return res.status(500).json({ ok: false });
+      const maxAge = req.session.cookie.maxAge || 0;
+      res.json({
+        ok: true,
+        expiresAt: new Date(Date.now() + maxAge).toISOString(),
+      });
+    });
+  }
+
+  /**
+   * Session metadata used by panel-session.js to schedule the
+   * "session expiring soon" warning and drive the idle auto-logout.
+   */
+  @Get('api/session/meta')
+  sessionMeta(
+    @Req() req: Request & { session: PanelSession },
+    @Res() res: Response,
+  ) {
+    const maxAge = req.session.cookie.maxAge || 0;
+    res.json({
+      expiresAt: new Date(Date.now() + maxAge).toISOString(),
+      idleTimeoutMs: parseInt(
+        process.env.IDLE_TIMEOUT_MS || String(10 * 60 * 1000),
+        10,
+      ),
+    });
+  }
+
   @Get()
   @Render('panel/dashboard')
   dashboard(@Req() req: Request & { session: PanelSession }) {
