@@ -50,7 +50,7 @@
 
       <div class="flex items-center gap-3 p-3 rounded-md bg-muted/30 text-sm">
         <i class="ki-filled ki-information-2 text-primary"></i>
-        <span>Tahmini alıcı: <strong id="estimate-count">—</strong></span>
+        <span>Tahmini alıcı: <strong id="estimate-count"><%= typeof initialEstimate !== 'undefined' && initialEstimate !== null ? initialEstimate : '—' %></strong></span>
       </div>
 
       <button id="send-btn" class="kt-btn kt-btn-primary">Gönder</button>

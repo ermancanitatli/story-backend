@@ -25,6 +25,8 @@ import { AdminAuditLogService } from './admin-audit-log.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { PageViewInterceptor } from './interceptors/page-view.interceptor';
 import { AdminPageView } from './schemas/admin-page-view.schema';
+import { SUPPORTED_LOCALES } from '../../shared/constants/locales';
+import { UserSegmentationService } from '../notifications/user-segmentation.service';
 
 type PanelSession = {
   adminId?: string;
@@ -49,6 +51,7 @@ export class PanelController {
     private readonly auditService: AdminAuditLogService,
     @InjectModel(AdminPageView.name)
     private readonly pageViewModel: Model<AdminPageView>,
+    private readonly segmentationService: UserSegmentationService,
   ) {}
 
   @Get('login')
@@ -335,28 +338,27 @@ export class PanelController {
   }
 
   @Get('notifications')
-  @Render('panel/notifications/composer')
-  showNotifications(@Req() req: Request & { session: PanelSession }) {
-    return {
+  async showNotifications(
+    @Req() req: Request & { session: PanelSession },
+    @Res() res: Response,
+  ) {
+    let initialEstimate = 0;
+    try {
+      const est = await this.segmentationService.estimate('non_premium');
+      initialEstimate = est.count;
+    } catch {
+      // estimate failure — fall back to 0, UI will refresh client-side
+    }
+
+    return res.render('panel/notifications/composer', {
       title: 'Bildirimler',
       currentPath: req.path,
       username: req.session?.username || 'Admin',
       breadcrumbs: [{ label: 'Bildirimler' }],
-      locales: [
-        'en',
-        'tr',
-        'ar',
-        'de',
-        'es',
-        'fr',
-        'it',
-        'ja',
-        'ko',
-        'pt',
-        'ru',
-        'zh',
-      ],
-    };
+      locales: [...SUPPORTED_LOCALES],
+      defaultSegment: 'non_premium',
+      initialEstimate,
+    });
   }
 
   @Get('notifications/history')
