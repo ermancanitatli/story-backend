@@ -4,18 +4,22 @@
   const STORY_ID = window.location.pathname.match(/\/panel\/stories\/([^\/]+)\/edit/)?.[1];
   const PATCH_DEBOUNCE_MS = 600;
   let patchTimer = null;
+  let lastSentChaptersSnapshot = null;
 
   function persistChapters() {
     if (!STORY_ID) return; // yeni hikaye modunda stories-edit.js önce POST yapar
     clearTimeout(patchTimer);
     patchTimer = setTimeout(async () => {
       try {
-        await window.panelApi.patch(`/panel/api/stories/${STORY_ID}`, {
-          chapters: window.__story?.chapters || [],
-        });
+        const chapters = window.__story?.chapters || [];
+        const snapshot = JSON.stringify(chapters);
+        if (snapshot === lastSentChaptersSnapshot) return; // değişim yoksa atlama
+        await window.panelApi.patch(`/panel/api/stories/${STORY_ID}`, { chapters });
+        lastSentChaptersSnapshot = snapshot;
       } catch (err) {
         console.error(err);
         window.panelToast?.error(`Bölüm kaydedilemedi: ${err?.body?.message || err.message}`);
+        lastSentChaptersSnapshot = null;
       }
     }, PATCH_DEBOUNCE_MS);
   }

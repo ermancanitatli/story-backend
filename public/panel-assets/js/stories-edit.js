@@ -5,6 +5,7 @@
   // ===== Debounced inline save =====
   const PATCH_DEBOUNCE_MS = 600;
   const patchTimers = new Map(); // key => timerId
+  const lastSentValues = new Map(); // key => JSON stringified son gönderilen değer
 
   function showSavedToast() {
     const t = window.panelToast;
@@ -18,7 +19,7 @@
     window.panelToast?.error?.(`Kaydedilemedi: ${msg}`);
   }
 
-  // Her alan için ayrı debounce timer'ı; field bazlı debounce
+  // Her alan için ayrı debounce timer'ı + son gönderilen değere göre dedupe
   function scheduleFieldPatch(key, bodyBuilder) {
     if (!STORY_ID || IS_NEW) return;
     const existing = patchTimers.get(key);
@@ -28,11 +29,19 @@
       try {
         const body = typeof bodyBuilder === 'function' ? bodyBuilder() : bodyBuilder;
         if (!body || Object.keys(body).length === 0) return;
+
+        // Değişim kontrolü — önceki gönderimle aynıysa request atma
+        const snapshot = JSON.stringify(body);
+        if (lastSentValues.get(key) === snapshot) return;
+
         await window.panelApi.patch(`/panel/api/stories/${STORY_ID}`, body);
+        lastSentValues.set(key, snapshot);
         showSavedToast();
       } catch (err) {
         console.error('[stories-edit] patch failed', key, err);
         showErrorToast(err);
+        // Hata durumunda son gönderim cache'ini temizle ki bir sonraki girişim tekrar dene
+        lastSentValues.delete(key);
       }
     }, PATCH_DEBOUNCE_MS);
     patchTimers.set(key, t);

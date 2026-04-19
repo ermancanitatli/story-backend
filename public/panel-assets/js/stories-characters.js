@@ -7,20 +7,24 @@
   const STORY_ID = window.location.pathname.match(/\/panel\/stories\/([^\/]+)\/edit/)?.[1];
   const PATCH_DEBOUNCE_MS = 600;
   let patchTimer = null;
+  let lastSentCharactersSnapshot = null;
 
   function persistCharacters() {
     if (!STORY_ID) return;
     clearTimeout(patchTimer);
     patchTimer = setTimeout(async () => {
       try {
-        await window.panelApi.patch(`/panel/api/stories/${STORY_ID}`, {
-          characters: window.__story?.characters || [],
-        });
+        const characters = window.__story?.characters || [];
+        const snapshot = JSON.stringify(characters);
+        if (snapshot === lastSentCharactersSnapshot) return; // değişim yoksa atlama
+        await window.panelApi.patch(`/panel/api/stories/${STORY_ID}`, { characters });
+        lastSentCharactersSnapshot = snapshot;
       } catch (err) {
         console.error(err);
         window.panelToast?.error(
           `Karakter kaydedilemedi: ${err?.body?.message || err.message}`,
         );
+        lastSentCharactersSnapshot = null;
       }
     }, PATCH_DEBOUNCE_MS);
   }
