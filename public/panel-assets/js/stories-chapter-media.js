@@ -282,9 +282,11 @@
             `
           : `<img src="${thumb || url}" alt="${esc(m.alt || '')}" style="max-height:300px;width:auto;max-width:100%;" class="object-contain block" loading="lazy"/>`;
 
-        const hideIcon = hidden ? 'ki-eye' : 'ki-eye-slash';
-        const hideTitle = hidden ? 'Görünür yap' : 'Gizle';
-        const hideBtnColor = hidden ? 'bg-warning' : 'bg-black/70';
+        const hideLabel = hidden ? 'Gösterilmiyor — tıkla göster' : 'Gizle';
+        const hideGlyph = hidden ? '🚫' : '👁';
+        const hideBg = hidden ? '#f59e0b' : 'rgba(0,0,0,0.75)';
+        const btnBase =
+          'position:absolute;width:32px;height:32px;border-radius:6px;color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;z-index:10;box-shadow:0 1px 3px rgba(0,0,0,0.3);';
         return `
           <div class="media-card group relative rounded-lg border border-border overflow-hidden hover:ring-2 ring-primary transition ${hidden ? 'opacity-50' : ''} inline-block align-top"
                data-item-id="${esc(m._id || '')}" draggable="true">
@@ -292,21 +294,34 @@
             ${orderBadge}
             ${dragHandle}
             ${videoBadge}
-            <!-- Gizle/göster her zaman görünür -->
-            <button type="button" class="media-toggle-hidden absolute top-1.5 right-1.5 size-7 rounded-md ${hideBtnColor} text-white text-sm flex items-center justify-center hover:opacity-90 z-10 shadow-md" title="${hideTitle}">
-              <i class="ki-filled ${hideIcon}"></i>
+            <!-- Gizle/göster: her zaman görünür, sağ üst -->
+            <button type="button" class="media-toggle-hidden" title="${hideLabel}"
+              style="${btnBase}top:6px;right:6px;background:${hideBg};">
+              <span style="line-height:1;">${hideGlyph}</span>
             </button>
-            <!-- Detay + Sil hover'da -->
-            <div class="absolute top-1.5 right-10 flex gap-1 opacity-0 group-hover:opacity-100 transition z-10">
-              <button type="button" class="media-open size-7 rounded-md bg-black/70 text-white text-sm flex items-center justify-center hover:bg-black/90" title="Detay">
-                <i class="ki-filled ki-pencil"></i>
-              </button>
-              <button type="button" class="media-del size-7 rounded-md bg-destructive text-white text-sm flex items-center justify-center hover:opacity-90" title="Sil">×</button>
-            </div>
+            <!-- Detay + Sil: hover'da sağ alt -->
+            <button type="button" class="media-open" title="Detay"
+              style="${btnBase}bottom:6px;right:6px;background:rgba(0,0,0,0.75);opacity:0;" data-hover-btn>
+              <span style="line-height:1;">✏️</span>
+            </button>
+            <button type="button" class="media-del" title="Sil"
+              style="${btnBase}bottom:6px;right:44px;background:#ef4444;opacity:0;" data-hover-btn>
+              <span style="line-height:1;font-weight:bold;">×</span>
+            </button>
           </div>
         `;
       })
       .join('');
+
+    // Hover ile data-hover-btn butonlarını göster
+    galleryGrid.querySelectorAll('.media-card').forEach((card) => {
+      card.addEventListener('mouseenter', () => {
+        card.querySelectorAll('[data-hover-btn]').forEach((b) => (b.style.opacity = '1'));
+      });
+      card.addEventListener('mouseleave', () => {
+        card.querySelectorAll('[data-hover-btn]').forEach((b) => (b.style.opacity = '0'));
+      });
+    });
 
     // detay aç (pencil butonu veya kartın görsel alanına çift-tık)
     galleryGrid.querySelectorAll('.media-open').forEach((btn) => {
