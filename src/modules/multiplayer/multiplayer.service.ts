@@ -345,11 +345,27 @@ export class MultiplayerService {
       this.logger.warn(
         `[choice-validate][multi] session=${sessionId} retry=${choiceRetry + 1}/${CHOICE_MAX_RETRIES} — ${check.reason}`,
       );
+      // Bilingual mod için explicit örnek ekle
+      const isBilingualRetry = !!grokResponse.localizedChoices || !!grokResponse.scenes;
+      const bilingualExample = isBilingualRetry
+        ? `\n\nFor bilingual mode, "choices" object MUST have EXACTLY 4 entries for EACH language:\n` +
+          `{\n  "scenes": { "${languages[0]}": "...", "${languages[1] || 'en'}": "..." },\n` +
+          `  "choices": {\n` +
+          `    "${languages[0]}": [\n` +
+          `      {"id":"1","text":"non-empty sentence","type":"action"},\n` +
+          `      {"id":"2","text":"non-empty sentence","type":"dialogue"},\n` +
+          `      {"id":"3","text":"non-empty sentence","type":"exploration"},\n` +
+          `      {"id":"4","text":"non-empty sentence","type":"decision"}\n` +
+          `    ],\n` +
+          `    "${languages[1] || 'en'}": [ /* same 4 choices translated */ ]\n` +
+          `  }\n}\n` +
+          `Both languages MUST have 4 choices with non-empty text. Missing or empty = error.`
+        : '';
       const retryMsg =
         userMessage +
         `\n\n[RESPONSE FORMAT ERROR — ATTEMPT ${choiceRetry + 1}/${CHOICE_MAX_RETRIES}]\n` +
         `Your previous response had invalid choices: ${check.reason}\n` +
-        `CRITICAL: EXACTLY 4 choices required. Each must have non-empty "text" and valid "type".\n` +
+        `CRITICAL: EXACTLY 4 choices required. Each must have non-empty "text" and valid "type".${bilingualExample}\n` +
         `Regenerate full JSON now.`;
       try {
         grokResponse = await this.aiService.callGrokAPI({ systemPrompt, userMessage: retryMsg });
@@ -362,9 +378,12 @@ export class MultiplayerService {
     const finalCheckMP = this.validateMultiplayerChoices(grokResponse);
     if (!finalCheckMP.valid) {
       const kept = this.keepValidMultiplayerChoices(grokResponse);
-      if (kept.minCount >= 3) {
+      // Bilingual mode: minCount her iki dilde de en az 2 olursa kabul (tek dilde eksik olabilir)
+      // Single mode: en az 3 choice olmalı
+      const acceptableThreshold = grokResponse.localizedChoices ? 2 : 3;
+      if (kept.minCount >= acceptableThreshold) {
         this.logger.warn(
-          `[choice-validate][multi] ${kept.minCount}/4 valid choice ile devam`,
+          `[choice-validate][multi] ${kept.minCount}/4 valid choice ile devam (threshold=${acceptableThreshold})`,
         );
         if (grokResponse.localizedChoices && kept.localizedChoices) {
           grokResponse.localizedChoices = kept.localizedChoices;
@@ -372,7 +391,7 @@ export class MultiplayerService {
         if (kept.choices) grokResponse.choices = kept.choices;
       } else {
         throw new BadRequestException(
-          `AI 3 deneme sonrası geçerli choice üretemedi (${kept.minCount}/4).`,
+          `AI 3 deneme sonrası geçerli choice üretemedi (${kept.minCount}/4, threshold=${acceptableThreshold}).`,
         );
       }
     }
