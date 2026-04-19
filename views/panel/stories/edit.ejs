@@ -97,7 +97,36 @@
         <p class="text-sm text-muted-foreground">Karakter yönetimi (STORY-13).</p>
       </div>
       <div class="tab-panel hidden" data-tab="images">
-        <p class="text-sm text-muted-foreground">Cover + gallery (STORY-14/15).</p>
+        <div class="flex flex-col gap-8">
+          <!-- COVER -->
+          <section>
+            <h3 class="text-base font-semibold mb-3">Kapak Görseli</h3>
+            <div id="cover-dropzone" class="border-2 border-dashed border-border rounded-md p-6 text-center cursor-pointer hover:bg-muted/30">
+              <div id="cover-preview" class="hidden">
+                <img id="cover-img" class="max-h-60 mx-auto rounded"/>
+                <div class="mt-3 flex justify-center gap-2">
+                  <button type="button" class="kt-btn kt-btn-sm kt-btn-outline" id="cover-replace">Değiştir</button>
+                  <button type="button" class="kt-btn kt-btn-sm kt-btn-destructive" id="cover-remove">Kaldır</button>
+                </div>
+              </div>
+              <div id="cover-placeholder">
+                <i class="ki-filled ki-picture text-[48px] text-muted-foreground"></i>
+                <p class="text-sm text-muted-foreground mt-2">Sürükle bırak veya tıkla</p>
+                <p class="text-xs text-muted-foreground">JPG, PNG, WebP · Max 1920px · Otomatik WebP dönüşümü</p>
+              </div>
+              <input type="file" id="cover-input" accept="image/jpeg,image/png,image/webp" class="hidden"/>
+            </div>
+            <div id="cover-progress" class="hidden mt-2">
+              <div class="kt-progress"><div class="kt-progress-bar" style="width:0%"></div></div>
+            </div>
+          </section>
+
+          <!-- GALLERY (STORY-15 tarafından doldurulacak) -->
+          <section>
+            <h3 class="text-base font-semibold mb-3">Galeri Görselleri</h3>
+            <p class="text-sm text-muted-foreground">Galeri yönetimi STORY-15 görevi ile eklenecek.</p>
+          </section>
+        </div>
       </div>
       <div class="tab-panel hidden" data-tab="settings">
         <div class="flex flex-col gap-5">
@@ -137,3 +166,4 @@
 
 <script src="/panel-assets/js/stories-edit.js"></script>
 <script src="/panel-assets/js/stories-chapters.js"></script>
+<script src="/panel-assets/js/stories-image-upload.js"></script>
