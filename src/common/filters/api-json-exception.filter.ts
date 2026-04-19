@@ -99,6 +99,7 @@ export class ApiJsonExceptionFilter implements ExceptionFilter {
             : 'panel/error';
       try {
         response.status(status).render(template, {
+          layout: false,
           title: `Hata ${status}`,
           statusCode: status,
           message,

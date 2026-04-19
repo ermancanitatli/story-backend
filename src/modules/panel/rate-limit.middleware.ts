@@ -21,6 +21,7 @@ export function createLoginRateLimiter(redisClient: Redis) {
     keyGenerator: (req: Request) => req.ip ?? 'unknown',
     handler: (req: Request, res: Response) => {
       return res.status(429).render('panel/rate-limited', {
+        layout: false,
         retryAfter: res.getHeader('Retry-After'),
       });
     },

@@ -59,6 +59,7 @@ export class PanelHtmlExceptionFilter implements ExceptionFilter {
 
     try {
       response.status(status).render(template, {
+        layout: false,
         title,
         statusCode: status,
         message,

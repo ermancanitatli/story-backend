@@ -67,7 +67,8 @@ export class PanelController {
       return res.redirect('/panel');
     }
     return res.render('panel/login', {
-      error: null,
+        layout: false,
+error: null,
       username: '',
       success:
         passwordChanged === '1'
@@ -88,6 +89,7 @@ export class PanelController {
     const user = await this.adminUsersService.verify(username, password);
     if (!user) {
       return res.status(401).render('panel/login', {
+        layout: false,
         error: 'Kullanıcı adı veya şifre hatalı.',
         username: username || '',
       });
@@ -106,6 +108,7 @@ export class PanelController {
     req.session.save((err) => {
       if (err) {
         return res.status(500).render('panel/login', {
+        layout: false,
           error: 'Oturum kaydedilemedi, tekrar deneyin.',
           username: user.username,
         });
@@ -215,7 +218,8 @@ export class PanelController {
     @Query('force') force?: string,
   ) {
     return res.render('panel/account/password', {
-      title: 'Şifre Değiştir',
+        layout: false,
+title: 'Şifre Değiştir',
       breadcrumbs: [
         { label: 'Hesap', href: '/panel/account' },
         { label: 'Şifre' },
@@ -247,7 +251,8 @@ export class PanelController {
 
     if (dto.newPassword !== dto.confirmPassword) {
       return res.render('panel/account/password', {
-        ...renderBase,
+        layout: false,
+...renderBase,
         error: 'Yeni şifreler eşleşmiyor',
         success: null,
       });
@@ -259,7 +264,8 @@ export class PanelController {
     );
     if (!user) {
       return res.render('panel/account/password', {
-        ...renderBase,
+        layout: false,
+...renderBase,
         error: 'Mevcut şifre hatalı',
         success: null,
       });
@@ -311,7 +317,8 @@ export class PanelController {
     if (error === 'invalid') errorMsg = 'Geçersiz kod, tekrar deneyin.';
     if (error === 'password') errorMsg = 'Şifre hatalı.';
     return res.render('panel/account/2fa', {
-      title: '2FA',
+        layout: false,
+title: '2FA',
       currentPath: req.path,
       username: user.username,
       breadcrumbs: [
@@ -358,7 +365,8 @@ export class PanelController {
     }
 
     return res.render('panel/account/2fa', {
-      title: '2FA',
+        layout: false,
+title: '2FA',
       currentPath: req.path,
       username: req.session.username || 'Admin',
       breadcrumbs: [
