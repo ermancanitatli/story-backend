@@ -1,1 +1,57 @@
-<!-- PANEL-03: Sidebar buraya gelecek -->
+<%
+  const isDashboard = currentPath === '/panel';
+  const isUsers = typeof currentPath === 'string' && currentPath.startsWith('/panel/users');
+  const isStories = typeof currentPath === 'string' && currentPath.startsWith('/panel/stories');
+  const isNotifications = typeof currentPath === 'string' && currentPath.startsWith('/panel/notifications');
+  const isSettings = typeof currentPath === 'string' && currentPath.startsWith('/panel/settings');
+%>
+<div class="kt-sidebar kt-sidebar-fixed kt-sidebar-collapse-auto bg-background border-e border-e-border fixed top-0 bottom-0 z-20 hidden lg:flex flex-col items-stretch shrink-0 [--kt-drawer-enable:true] lg:[--kt-drawer-enable:false]" id="sidebar" data-kt-drawer="true" data-kt-drawer-class="kt-drawer kt-drawer-start top-0 bottom-0" data-kt-drawer-enable="true|lg:false">
+  <div class="kt-sidebar-header hidden lg:flex items-center relative justify-between px-3 lg:px-6 shrink-0" id="sidebar_header">
+    <a href="/panel" class="flex items-center gap-2">
+      <img src="/panel-assets/media/app/default-logo.svg" class="h-[28px] dark:hidden" alt="Story Admin" />
+      <img src="/panel-assets/media/app/default-logo-dark.svg" class="h-[28px] hidden dark:block" alt="Story Admin" />
+    </a>
+    <button class="kt-btn kt-btn-outline kt-btn-icon size-[30px] absolute start-full top-2/4 -translate-x-2/4 -translate-y-2/4 rtl:translate-x-2/4" id="sidebar_toggle" data-kt-toggle="body" data-kt-toggle-class="kt-sidebar-collapse">
+      <i class="ki-filled ki-exit-left"></i>
+    </button>
+  </div>
+
+  <div class="kt-sidebar-content flex grow shrink-0 py-5 pe-2" id="sidebar_content">
+    <div class="kt-menu kt-menu-default flex flex-col grow gap-0.5 px-3 lg:px-6 w-full">
+      <div class="kt-menu-item <%= isDashboard ? 'kt-menu-item-active' : '' %>">
+        <a class="kt-menu-link" href="/panel">
+          <span class="kt-menu-icon"><i class="ki-filled ki-element-11"></i></span>
+          <span class="kt-menu-title">Dashboard</span>
+        </a>
+      </div>
+      <div class="kt-menu-item <%= isUsers ? 'kt-menu-item-active' : '' %>">
+        <a class="kt-menu-link" href="/panel/users">
+          <span class="kt-menu-icon"><i class="ki-filled ki-people"></i></span>
+          <span class="kt-menu-title">Kullanıcılar</span>
+        </a>
+      </div>
+      <div class="kt-menu-item <%= isStories ? 'kt-menu-item-active' : '' %>">
+        <a class="kt-menu-link" href="/panel/stories">
+          <span class="kt-menu-icon"><i class="ki-filled ki-book"></i></span>
+          <span class="kt-menu-title">Hikayeler</span>
+        </a>
+      </div>
+      <div class="kt-menu-item <%= isNotifications ? 'kt-menu-item-active' : '' %>">
+        <a class="kt-menu-link" href="/panel/notifications">
+          <span class="kt-menu-icon"><i class="ki-filled ki-notification-bing"></i></span>
+          <span class="kt-menu-title">Bildirimler</span>
+        </a>
+      </div>
+      <div class="kt-menu-item <%= isSettings ? 'kt-menu-item-active' : '' %>">
+        <a class="kt-menu-link" href="/panel/settings">
+          <span class="kt-menu-icon"><i class="ki-filled ki-setting-2"></i></span>
+          <span class="kt-menu-title">Ayarlar</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="kt-sidebar-footer mt-auto p-4 border-t border-border">
+    <!-- PANEL-05: Username + logout buraya -->
+  </div>
+</div>
