@@ -50,6 +50,13 @@ async function bootstrap() {
   app.setViewEngine('ejs');
   app.use(expressLayouts);
   app.set('layout', false); // default: layout YOK — controller opt-in ile açar
+  // Panel rotaları için default layout = 'panel/layout' (login/logout hariç)
+  app.use((req: any, res: any, next: any) => {
+    if (req.path.startsWith('/panel') && req.path !== '/panel/login' && req.path !== '/panel/logout') {
+      res.locals.layout = 'panel/layout';
+    }
+    next();
+  });
   app.useStaticAssets(join(__dirname, '..', 'public'));
 
   // Expose Sentry client DSN to all EJS templates (layout reads it for optional browser SDK init).
