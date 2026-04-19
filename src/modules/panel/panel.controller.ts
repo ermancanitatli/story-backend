@@ -172,8 +172,9 @@ error: null,
     const maxAge = req.session.cookie.maxAge || 0;
     res.json({
       expiresAt: new Date(Date.now() + maxAge).toISOString(),
+      // Default 30 gün — IDLE_TIMEOUT_MS env ile override edilebilir
       idleTimeoutMs: parseInt(
-        process.env.IDLE_TIMEOUT_MS || String(10 * 60 * 1000),
+        process.env.IDLE_TIMEOUT_MS || String(30 * 24 * 60 * 60 * 1000),
         10,
       ),
     });

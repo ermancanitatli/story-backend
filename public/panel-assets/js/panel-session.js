@@ -3,7 +3,8 @@
 
   const IDLE_KEY = 'panel:last-activity';
   const WARN_BEFORE_MS = 5 * 60 * 1000; // 5 dk kala uyar
-  let idleTimeoutMs = 10 * 60 * 1000;
+  // Default idle: 30 gün (sunucudan gelen idleTimeoutMs override eder)
+  let idleTimeoutMs = 30 * 24 * 60 * 60 * 1000;
   let expiresAt = null;
   let warnTimer = null;
   let idleCheckTimer = null;
@@ -29,18 +30,24 @@
     if (document.getElementById(modalId)) return;
     const backdrop = document.createElement('div');
     backdrop.id = modalId;
-    backdrop.className = 'fixed inset-0 z-50 bg-black/40 flex items-center justify-center';
-    backdrop.innerHTML = '<div class="kt-card max-w-md w-full"><div class="kt-card-content p-6"><h3 class="text-lg font-semibold mb-2">Oturumunun bitmesine az kaldı</h3><p class="text-sm text-secondary-foreground mb-5">5 dakika içinde çıkış yapılacak. Devam etmek için oturumu uzat.</p><div class="flex justify-end gap-2"><button class="kt-btn kt-btn-outline" id="ses-cancel">Vazgeç</button><button class="kt-btn kt-btn-primary" id="ses-extend">Oturumu Uzat</button></div></div></div>';
+    backdrop.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;padding:16px;';
+    backdrop.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:420px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,0.35);overflow:hidden;"><div style="padding:24px;"><h3 style="font-size:18px;font-weight:600;margin-bottom:8px;">Oturumunun bitmesine az kaldı</h3><p style="font-size:14px;color:#6b7280;margin-bottom:20px;">5 dakika içinde çıkış yapılacak. Devam etmek için oturumu uzat.</p><div style="display:flex;justify-content:flex-end;gap:8px;"><button class="kt-btn kt-btn-outline" id="ses-cancel">Vazgeç</button><button class="kt-btn kt-btn-primary" id="ses-extend">Oturumu Uzat</button></div></div></div>';
     document.body.appendChild(backdrop);
     document.getElementById('ses-cancel').onclick = () => backdrop.remove();
     document.getElementById('ses-extend').onclick = async () => {
+      const btn = document.getElementById('ses-extend');
+      btn.disabled = true;
       try {
         const data = await window.panelApi.post('/panel/api/session/extend');
-        expiresAt = new Date(data.expiresAt);
+        if (data?.expiresAt) expiresAt = new Date(data.expiresAt);
         backdrop.remove();
         scheduleWarning();
         window.panelToast?.success('Oturum uzatıldı');
-      } catch (e) {}
+      } catch (err) {
+        console.error('[panel-session] extend failed', err);
+        window.panelToast?.error('Oturum uzatılamadı: ' + (err?.body?.message || err?.message || 'bilinmiyor'));
+        btn.disabled = false;
+      }
     };
   }
 
