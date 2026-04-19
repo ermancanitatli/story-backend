@@ -122,11 +122,16 @@ export class AiService {
    * Hem single-player hem multiplayer'da kullanılır. Her 5 step'te async olarak
    * regenerate edilir. Eski summary varsa yenisiyle merge edilir (incremental).
    *
+   * Language code hikayenin dili (tr/en/ar...) ile aynı olmalı — AI özet
+   * metnini o dilde döndürür, böylece ana prompt'a enjekte edildiğinde
+   * dil karışıklığı yaşanmaz.
+   *
    * Hata durumunda boş string döner — service fallback raw history'ye düşer.
    */
   async summarizeRecentScenes(
     newScenes: string[],
     existingSummary?: string,
+    languageCode?: string,
   ): Promise<string> {
     if (!newScenes || newScenes.length === 0) return '';
 
@@ -134,10 +139,12 @@ export class AiService {
       .map((s, i) => `${i + 1}. ${s}`)
       .join('\n\n');
 
+    const langInstruction = this.buildSummaryLanguageInstruction(languageCode);
+
     const userContent = existingSummary
       ? `Previous rolling summary:\n${existingSummary}\n\nNew scenes to merge:\n${scenesText}\n\n` +
-        `Update the summary incorporating the new scenes. Keep: character actions, decisions, promises made, key emotional shifts. Skip: atmospheric descriptions, weather, scenery. Output 2-4 sentences, past tense, factual tone, plain text only (no JSON, no bullets).`
-      : `Scenes:\n${scenesText}\n\nCompress into 2-4 sentences. Keep: character actions, decisions, promises, emotional shifts. Past tense, factual. Plain text only.`;
+        `Update the summary incorporating the new scenes. Keep: character actions, decisions, promises made, key emotional shifts. Skip: atmospheric descriptions, weather, scenery. Output 2-4 sentences, past tense, factual tone, plain text only (no JSON, no bullets). ${langInstruction}`
+      : `Scenes:\n${scenesText}\n\nCompress into 2-4 sentences. Keep: character actions, decisions, promises, emotional shifts. Past tense, factual. Plain text only. ${langInstruction}`;
 
     try {
       const response = await fetch(this.apiUrl, {
@@ -152,7 +159,7 @@ export class AiService {
             {
               role: 'system',
               content:
-                'You are a story editor. Produce concise factual summaries. Do not invent facts. Do not use dramatic prose. Plain narrative past tense only.',
+                `You are a story editor. Produce concise factual summaries. Do not invent facts. Do not use dramatic prose. Plain narrative past tense only. ${langInstruction}`,
             },
             { role: 'user', content: userContent },
           ],
@@ -184,10 +191,15 @@ export class AiService {
    * 1-2 cümleye sıkıştırır, AI recency bias'ını kırmak için ana promptta raw history
    * yerine bu özet kullanılır. Tek seferlik çağrı, session.bridgeSummaries'e cache'lenir.
    */
-  async summarizeForTransition(recentSceneText: string): Promise<string> {
+  async summarizeForTransition(
+    recentSceneText: string,
+    languageCode?: string,
+  ): Promise<string> {
     if (!recentSceneText || recentSceneText.trim().length === 0) {
       return '';
     }
+
+    const langInstruction = this.buildSummaryLanguageInstruction(languageCode);
 
     try {
       const response = await fetch(this.apiUrl, {
@@ -202,11 +214,11 @@ export class AiService {
             {
               role: 'system',
               content:
-                'You are a story editor. Compress the given scenes into 1-2 sentences summarizing the key state at the end (location, emotional status, relationships). This summary will be used as "archived past events" — past tense, factual, no dialogue. Output plain text only, no JSON.',
+                `You are a story editor. Compress the given scenes into 1-2 sentences summarizing the key state at the end (location, emotional status, relationships). This summary will be used as "archived past events" — past tense, factual, no dialogue. Output plain text only, no JSON. ${langInstruction}`,
             },
             {
               role: 'user',
-              content: `Scenes to compress:\n${recentSceneText}`,
+              content: `Scenes to compress:\n${recentSceneText}\n\n${langInstruction}`,
             },
           ],
           temperature: 0.3,
@@ -231,5 +243,29 @@ export class AiService {
       );
       return '';
     }
+  }
+
+  /**
+   * Özet prompt'larında AI'a hangi dilde yazılacağını söyleyen yardımcı.
+   * Default 'en'. Hikayenin dili (session.languageCode veya params.languageCode)
+   * ne ise o dilde özet üretilir.
+   */
+  private buildSummaryLanguageInstruction(languageCode?: string): string {
+    const lang = (languageCode || 'en').trim().toLowerCase().split(/[-_]/)[0];
+    const instructions: Record<string, string> = {
+      en: 'Write the summary in English.',
+      tr: 'Özeti Türkçe yaz.',
+      ar: 'اكتب الملخص باللغة العربية.',
+      de: 'Schreibe die Zusammenfassung auf Deutsch.',
+      es: 'Escribe el resumen en español.',
+      fr: 'Écris le résumé en français.',
+      it: 'Scrivi il riassunto in italiano.',
+      ja: '要約を日本語で書いてください。',
+      ko: '요약을 한국어로 작성하세요.',
+      pt: 'Escreva o resumo em português.',
+      ru: 'Напишите резюме на русском языке.',
+      zh: '用中文撰写摘要。',
+    };
+    return instructions[lang] || instructions.en;
   }
 }

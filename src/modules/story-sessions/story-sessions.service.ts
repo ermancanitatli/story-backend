@@ -331,6 +331,7 @@ export class StorySessionsService {
         );
         const summary = await this.aiService.summarizeForTransition(
           recentHistory.join('\n'),
+          params.languageCode || session.languageCode || 'en',
         );
         if (summary) {
           previousChapterBridge = summary;
@@ -633,6 +634,7 @@ export class StorySessionsService {
         session._id.toString(),
         newStep,
         (session as any).rollingSummary?.text || '',
+        params.languageCode || session.languageCode || 'en',
       );
     }
 
@@ -649,6 +651,7 @@ export class StorySessionsService {
     sessionId: string,
     atStep: number,
     existingSummary: string,
+    languageCode?: string,
   ): Promise<void> {
     try {
       // Son N+Tier1 sahne çek (Tier 1 hariç olacak — en yeni 2 sahne özete girmez)
@@ -673,6 +676,7 @@ export class StorySessionsService {
       const newSummary = await this.aiService.summarizeRecentScenes(
         scenesToSummarize,
         existingSummary || undefined,
+        languageCode,
       );
 
       if (!newSummary) return;

@@ -426,10 +426,13 @@ export class MultiplayerService {
       newTurn >= MIN_STEPS_FOR_ROLLING &&
       newTurn % ROLLING_SUMMARY_INTERVAL === 0
     ) {
+      // Summary'nin dili — host dili öncelikli (bilingual'da kullanıcıların birisi)
+      const summaryLang = session.hostLanguageCode || session.guestLanguageCode || 'en';
       this.scheduleMultiplayerRollingSummary(
         sessionId,
         newTurn,
         (session as any).rollingSummary?.text || '',
+        summaryLang,
       );
     }
 
@@ -444,6 +447,7 @@ export class MultiplayerService {
     sessionId: string,
     atTurn: number,
     existingSummary: string,
+    languageCode?: string,
   ): Promise<void> {
     try {
       const fetchLimit = 5 + 2; // window + tier1
@@ -464,6 +468,7 @@ export class MultiplayerService {
       const newSummary = await this.aiService.summarizeRecentScenes(
         scenesToSummarize,
         existingSummary || undefined,
+        languageCode,
       );
       if (!newSummary) return;
 
