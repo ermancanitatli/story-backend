@@ -1,0 +1,160 @@
+<% layout('panel/layout') %>
+
+<%
+  function escapeHtml(s) {
+    if (s === null || s === undefined) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+  function fmtDate(d) {
+    if (!d) return '—';
+    try {
+      return new Date(d).toLocaleString('tr-TR', { hour12: false });
+    } catch (e) {
+      return String(d);
+    }
+  }
+%>
+
+<div class="flex flex-col gap-5">
+  <% if (typeof createdTempPassword !== 'undefined' && createdTempPassword) { %>
+    <div class="kt-alert kt-alert-success flex items-start gap-2 px-3 py-2 rounded-md border border-success/20 bg-success/10 text-success text-sm">
+      <i class="ki-filled ki-shield-tick mt-0.5"></i>
+      <div>
+        <div class="font-semibold">Yeni admin oluşturuldu.</div>
+        <div>Geçici şifre: <code class="font-mono bg-background px-1.5 py-0.5 rounded border border-border"><%= escapeHtml(createdTempPassword) %></code></div>
+        <div class="text-xs mt-1">Bu şifreyi güvenli bir kanalla kullanıcıya iletin. İlk girişte şifreyi değiştirmesi istenecek.</div>
+      </div>
+    </div>
+  <% } %>
+
+  <% if (typeof resetTempPassword !== 'undefined' && resetTempPassword) { %>
+    <div class="kt-alert kt-alert-warning flex items-start gap-2 px-3 py-2 rounded-md border border-warning/20 bg-warning/10 text-warning text-sm">
+      <i class="ki-filled ki-information-5 mt-0.5"></i>
+      <div>
+        <div class="font-semibold">Şifre sıfırlandı.</div>
+        <div>Geçici şifre: <code class="font-mono bg-background px-1.5 py-0.5 rounded border border-border"><%= escapeHtml(resetTempPassword) %></code></div>
+        <div class="text-xs mt-1">Yalnızca şimdi gösterilir — güvenli bir kanalla kullanıcıya iletin.</div>
+      </div>
+    </div>
+  <% } %>
+
+  <div class="kt-card">
+    <div class="kt-card-header flex items-center justify-between">
+      <h3 class="kt-card-title">Adminler</h3>
+      <button type="button" class="kt-btn kt-btn-primary kt-btn-sm" onclick="document.getElementById('create-modal').classList.remove('hidden')">
+        <i class="ki-filled ki-plus"></i>
+        <span>Yeni Admin</span>
+      </button>
+    </div>
+    <div class="kt-card-content p-0 overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-muted/40 text-secondary-foreground">
+          <tr>
+            <th class="text-start px-4 py-2 font-medium">Username</th>
+            <th class="text-start px-4 py-2 font-medium">Rol</th>
+            <th class="text-start px-4 py-2 font-medium">Aktif</th>
+            <th class="text-start px-4 py-2 font-medium">Son Giriş</th>
+            <th class="text-start px-4 py-2 font-medium">Şifre</th>
+            <th class="text-end px-4 py-2 font-medium">Aksiyonlar</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (!admins || admins.length === 0) { %>
+            <tr>
+              <td colspan="6" class="px-4 py-8 text-center text-secondary-foreground">Kayıt yok.</td>
+            </tr>
+          <% } else { %>
+            <% admins.forEach(function(a) { %>
+              <tr class="border-t border-border">
+                <td class="px-4 py-2">
+                  <div class="font-medium text-mono"><%= escapeHtml(a.username) %></div>
+                  <div class="text-[10px] text-secondary-foreground"><%= escapeHtml(a._id) %></div>
+                </td>
+                <td class="px-4 py-2">
+                  <form method="post" action="/panel/admins/<%= a._id %>/role" class="flex items-center gap-2">
+                    <select name="role" class="kt-input kt-input-sm">
+                      <option value="admin" <%= a.role === 'admin' ? 'selected' : '' %>>Admin</option>
+                      <option value="superadmin" <%= a.role === 'superadmin' ? 'selected' : '' %>>Superadmin</option>
+                    </select>
+                    <button type="submit" class="kt-btn kt-btn-sm kt-btn-outline" title="Rolü güncelle">
+                      <i class="ki-filled ki-check"></i>
+                    </button>
+                  </form>
+                </td>
+                <td class="px-4 py-2">
+                  <% if (a.isActive) { %>
+                    <span class="kt-badge kt-badge-success">Aktif</span>
+                  <% } else { %>
+                    <span class="kt-badge kt-badge-destructive">Pasif</span>
+                  <% } %>
+                </td>
+                <td class="px-4 py-2 text-xs text-secondary-foreground"><%= fmtDate(a.lastLoginAt) %></td>
+                <td class="px-4 py-2 text-xs">
+                  <% if (a.mustChangePassword) { %>
+                    <span class="kt-badge kt-badge-warning">Geçici</span>
+                  <% } else { %>
+                    <span class="text-secondary-foreground">—</span>
+                  <% } %>
+                </td>
+                <td class="px-4 py-2">
+                  <div class="flex items-center justify-end gap-2">
+                    <form method="post" action="/panel/admins/<%= a._id %>/toggle-active" class="inline">
+                      <input type="hidden" name="isActive" value="<%= a.isActive ? 'false' : 'true' %>" />
+                      <button type="submit" class="kt-btn kt-btn-sm kt-btn-outline">
+                        <%= a.isActive ? 'Disable' : 'Enable' %>
+                      </button>
+                    </form>
+                    <form method="post" action="/panel/admins/<%= a._id %>/reset-password" class="inline" onsubmit="return confirm('Şifre sıfırlansın mı?');">
+                      <button type="submit" class="kt-btn kt-btn-sm kt-btn-outline">
+                        <i class="ki-filled ki-key-square"></i>
+                        <span>Şifre Sıfırla</span>
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            <% }); %>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Create modal -->
+<div id="create-modal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+  <div class="kt-card max-w-md w-full">
+    <div class="kt-card-header">
+      <h3 class="kt-card-title">Yeni Admin</h3>
+    </div>
+    <div class="kt-card-content">
+      <form method="post" action="/panel/admins" class="flex flex-col gap-3">
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label">Kullanıcı Adı</label>
+          <input type="text" name="username" class="kt-input" required minlength="3" maxlength="64" autocomplete="off" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label">Şifre</label>
+          <input type="text" name="password" class="kt-input" placeholder="Boş bırakılırsa rastgele geçici şifre üretilir" autocomplete="new-password" />
+          <small class="text-xs text-secondary-foreground">Otomatik üretilen şifrelerde kullanıcı ilk girişte şifre değiştirmek zorundadır.</small>
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="kt-form-label">Rol</label>
+          <select name="role" class="kt-input">
+            <option value="admin">Admin</option>
+            <option value="superadmin">Superadmin</option>
+          </select>
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" class="kt-btn kt-btn-outline" onclick="document.getElementById('create-modal').classList.add('hidden')">İptal</button>
+          <button type="submit" class="kt-btn kt-btn-primary">Oluştur</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

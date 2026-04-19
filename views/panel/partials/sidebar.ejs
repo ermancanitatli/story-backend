@@ -5,6 +5,7 @@
   const isNotifications = typeof currentPath === 'string' && currentPath.startsWith('/panel/notifications');
   const isSettings = typeof currentPath === 'string' && currentPath.startsWith('/panel/settings');
   const isAudit = typeof currentPath === 'string' && currentPath.startsWith('/panel/audit');
+  const isAdmins = typeof currentPath === 'string' && currentPath.startsWith('/panel/admins');
 %>
 <div
   class="kt-sidebar hidden lg:flex flex-col shrink-0 w-[280px] border-e border-border bg-background"
@@ -59,6 +60,12 @@
         <a class="kt-menu-link" href="/panel/audit">
           <span class="kt-menu-icon"><i class="ki-filled ki-shield-tick"></i></span>
           <span class="kt-menu-title">Audit Log</span>
+        </a>
+      </div>
+      <div class="kt-menu-item <%= isAdmins ? 'kt-menu-item-active' : '' %>">
+        <a class="kt-menu-link" href="/panel/admins">
+          <span class="kt-menu-icon"><i class="ki-filled ki-shield-search"></i></span>
+          <span class="kt-menu-title">Adminler</span>
         </a>
       </div>
     </div>

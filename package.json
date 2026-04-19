@@ -18,6 +18,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:panel:e2e": "playwright test",
     "verify:indexes": "ts-node scripts/verify-indexes.ts"
   },
   "dependencies": {
@@ -62,6 +63,7 @@
     "@nestjs/cli": "^10.4.0",
     "@nestjs/schematics": "^10.1.0",
     "@nestjs/testing": "^10.4.0",
+    "@playwright/test": "^1.59.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^4.17.21",
     "@types/express-session": "^1.19.0",
