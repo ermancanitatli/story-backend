@@ -1,12 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Story } from './schemas/story.schema';
+import { StorySession } from '../story-sessions/schemas/story-session.schema';
 import { PaginationDto, PaginatedResult } from '../../common/dto/pagination.dto';
+import { CreateStoryDto } from './dto/create-story.dto';
+import { UpdateStoryDto } from './dto/update-story.dto';
+import { ListStoryQueryDto } from './dto/list-story-query.dto';
 
 @Injectable()
 export class StoriesService {
-  constructor(@InjectModel(Story.name) private storyModel: Model<Story>) {}
+  constructor(
+    @InjectModel(Story.name) private storyModel: Model<Story>,
+    @Optional()
+    @InjectModel(StorySession.name)
+    private storySessionModel?: Model<StorySession>,
+  ) {}
 
   /**
    * Get all public stories (paginated, newest first).
@@ -89,5 +98,116 @@ export class StoriesService {
   async softDelete(id: string): Promise<void> {
     const result = await this.storyModel.findByIdAndUpdate(id, { ownerDeleted: true });
     if (!result) throw new NotFoundException('Story not found');
+  }
+
+  // -------------------------------------------------------------------------
+  // Admin methods (STORY-04) — admin panel CRUD + yardımcı sorgular.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Admin list with filters, search, sorting ve pagination.
+   */
+  async adminList(query: ListStoryQueryDto): Promise<{
+    stories: Story[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = Math.max(query.page || 1, 1);
+    const limit = Math.min(Math.max(query.limit || 20, 1), 100);
+    const sortBy = query.sortBy || 'updatedAt';
+    const sortDir = query.sortDir === 'asc' ? 1 : -1;
+
+    const filter: any = {};
+    if (query.genre) filter.genre = query.genre;
+    if (typeof query.isPaid === 'boolean') filter.isPaid = query.isPaid;
+    if (typeof query.isPublished === 'boolean') filter.isPublished = query.isPublished;
+    if (query.search) {
+      const rx = new RegExp(
+        query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+        'i',
+      );
+      filter.$or = [{ title: rx }, { tags: rx }];
+    }
+    // Silinmişleri varsayılan olarak gizle
+    filter.deletedAt = { $exists: false };
+
+    const [stories, total] = await Promise.all([
+      this.storyModel
+        .find(filter)
+        .sort({ [sortBy]: sortDir })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.storyModel.countDocuments(filter).exec(),
+    ]);
+
+    return { stories: stories as unknown as Story[], total, page, limit };
+  }
+
+  /**
+   * Admin create — DTO validated.
+   */
+  async adminCreate(dto: CreateStoryDto): Promise<Story> {
+    return this.storyModel.create({ ...(dto as any), readCount: 0 });
+  }
+
+  /**
+   * Admin update — basit $set, nested translations merge edilmez (replace).
+   */
+  async adminUpdate(id: string, dto: UpdateStoryDto): Promise<Story> {
+    const updated = await this.storyModel
+      .findByIdAndUpdate(id, { $set: dto as any }, { new: true })
+      .lean()
+      .exec();
+    if (!updated) throw new NotFoundException('Story not found');
+    return updated as unknown as Story;
+  }
+
+  /**
+   * Admin soft delete — `deletedAt` timestamp set eder.
+   */
+  async adminSoftDelete(id: string): Promise<void> {
+    const result = await this.storyModel
+      .findByIdAndUpdate(id, { $set: { deletedAt: new Date() } })
+      .exec();
+    if (!result) throw new NotFoundException('Story not found');
+  }
+
+  /**
+   * Admin duplicate — yeni `(copy)` suffixli draft oluşturur.
+   */
+  async adminDuplicate(id: string): Promise<Story> {
+    const original = await this.storyModel.findById(id).lean().exec();
+    if (!original) throw new NotFoundException('Story not found');
+    const { _id, createdAt, updatedAt, ...rest } = original as any;
+    const copy: any = {
+      ...rest,
+      title: (rest.title || '') + ' (copy)',
+      translations: rest.translations
+        ? JSON.parse(JSON.stringify(rest.translations))
+        : undefined,
+      isPublished: false,
+      readCount: 0,
+    };
+    if (copy.translations?.en?.title) {
+      copy.translations.en.title += ' (copy)';
+    }
+    return this.storyModel.create(copy);
+  }
+
+  /**
+   * Aktif oturum sayısı — admin arayüzünde silme uyarısı için kullanılır.
+   */
+  async activeSessionCount(storyId: string): Promise<number> {
+    if (!this.storySessionModel) return 0;
+    try {
+      return await this.storySessionModel
+        .countDocuments({ storyId, status: 'active' })
+        .exec();
+    } catch {
+      return 0;
+    }
   }
 }
