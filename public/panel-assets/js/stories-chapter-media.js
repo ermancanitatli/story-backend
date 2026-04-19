@@ -258,19 +258,21 @@
     galleryEmpty?.classList.add('hidden');
 
     galleryGrid.innerHTML = items
-      .map((m) => {
+      .map((m, idx) => {
         const isVid = isVideoItem(m);
         const hidden = m.hidden === true;
         const thumbRaw = m.thumbnail || '';
         const url = esc(m.url || '');
         const thumbIsImage = thumbRaw && /\.(jpe?g|png|webp|gif|avif)(\?|$)/i.test(thumbRaw.split('?')[0]);
         const thumb = thumbIsImage ? esc(thumbRaw) : '';
+        const orderBadge = `<span class="absolute top-1.5 left-1.5 rounded-md bg-black/70 text-white text-xs font-semibold px-1.5 py-0.5 z-10">#${idx + 1}</span>`;
         const hiddenBadge = hidden
-          ? '<span class="absolute top-1.5 left-1.5 kt-badge kt-badge-xs kt-badge-warning z-10">Gizli</span>'
+          ? '<span class="absolute bottom-1.5 right-1.5 kt-badge kt-badge-xs kt-badge-warning z-10">Gizli</span>'
           : '';
         const videoBadge = isVid
           ? '<span class="absolute bottom-1.5 left-1.5 kt-badge kt-badge-xs kt-badge-primary z-10"><i class="ki-filled ki-play"></i> Video</span>'
           : '';
+        const dragHandle = `<span class="media-drag absolute top-1.5 left-10 size-6 rounded-md bg-black/60 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition z-10 cursor-grab" title="Sürükle sıralamak için">⋮⋮</span>`;
         const inner = isVid
           ? `
               <video src="${url}#t=0.5" ${thumb ? `poster="${thumb}"` : ''} style="max-height:600px;width:auto;max-width:100%;" class="object-contain bg-black block" preload="metadata" muted playsinline></video>
@@ -280,23 +282,69 @@
             `
           : `<img src="${thumb || url}" alt="${esc(m.alt || '')}" style="max-height:600px;width:auto;max-width:100%;" class="object-contain block" loading="lazy"/>`;
 
+        const hideIcon = hidden ? 'ki-eye' : 'ki-eye-slash';
+        const hideTitle = hidden ? 'Görünür yap' : 'Gizle';
         return `
-          <div class="media-card group relative rounded-lg border border-border overflow-hidden cursor-pointer hover:ring-2 ring-primary transition ${hidden ? 'opacity-50' : ''} inline-block align-top"
+          <div class="media-card group relative rounded-lg border border-border overflow-hidden hover:ring-2 ring-primary transition ${hidden ? 'opacity-50' : ''} inline-block align-top"
                data-item-id="${esc(m._id || '')}" draggable="true">
             ${inner}
+            ${orderBadge}
+            ${dragHandle}
             ${hiddenBadge}
             ${videoBadge}
-            <button type="button" class="media-del absolute top-1.5 right-1.5 size-6 rounded-full bg-destructive text-white text-xs opacity-0 group-hover:opacity-100 transition z-10" title="Sil">×</button>
+            <div class="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition z-10">
+              <button type="button" class="media-toggle-hidden size-6 rounded-md bg-black/70 text-white text-xs flex items-center justify-center hover:bg-black/90" title="${hideTitle}">
+                <i class="ki-filled ${hideIcon}"></i>
+              </button>
+              <button type="button" class="media-open size-6 rounded-md bg-black/70 text-white text-xs flex items-center justify-center hover:bg-black/90" title="Detay">
+                <i class="ki-filled ki-pencil"></i>
+              </button>
+              <button type="button" class="media-del size-6 rounded-md bg-destructive text-white text-xs flex items-center justify-center hover:opacity-90" title="Sil">×</button>
+            </div>
           </div>
         `;
       })
       .join('');
 
-    // card click → lightbox (but not delete button)
+    // detay aç (pencil butonu veya kartın görsel alanına çift-tık)
+    galleryGrid.querySelectorAll('.media-open').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const card = btn.closest('.media-card');
+        if (card?.dataset.itemId) openLightbox(card.dataset.itemId);
+      });
+    });
     galleryGrid.querySelectorAll('.media-card').forEach((el) => {
-      el.addEventListener('click', (e) => {
-        if (e.target.closest('.media-del')) return;
+      el.addEventListener('dblclick', (e) => {
+        if (e.target.closest('button')) return;
         openLightbox(el.dataset.itemId);
+      });
+    });
+
+    // gizle / görünür yap toggle
+    galleryGrid.querySelectorAll('.media-toggle-hidden').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const card = btn.closest('.media-card');
+        const itemId = card?.dataset.itemId;
+        if (!itemId) return;
+        const ch = currentChapter();
+        const item = chapterMediaItems(ch).find((m) => m._id === itemId);
+        if (!item) return;
+        const newHidden = !item.hidden;
+        try {
+          const res = await window.panelApi.patch(
+            `/panel/api/stories/${STORY_ID}/chapters/${state.selectedChapter}/media/${itemId}`,
+            { hidden: newHidden },
+          );
+          ch.mediaItems = res.mediaItems || chapterMediaItems(ch);
+          if (ch.scenes && ch.scenes[0]) ch.scenes[0].mediaItems = ch.mediaItems;
+          renderGrid();
+          window.panelToast?.success(newHidden ? 'Gizlendi' : 'Görünür yapıldı');
+        } catch (err) {
+          console.error(err);
+          window.panelToast?.error('Değiştirilemedi');
+        }
       });
     });
 
