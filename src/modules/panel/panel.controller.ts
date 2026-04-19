@@ -43,11 +43,19 @@ export class PanelController {
   showLogin(
     @Req() req: Request & { session: PanelSession },
     @Res() res: Response,
+    @Query('passwordChanged') passwordChanged?: string,
   ) {
     if (req.session?.adminId) {
       return res.redirect('/panel');
     }
-    return res.render('panel/login', { error: null, username: '' });
+    return res.render('panel/login', {
+      error: null,
+      username: '',
+      success:
+        passwordChanged === '1'
+          ? 'Şifreniz güncellendi. Yeni şifrenizle giriş yapın.'
+          : null,
+    });
   }
 
   @Post('login')
@@ -152,6 +160,81 @@ export class PanelController {
    * Audit log viewer (paginated).
    * Şu an tüm giriş yapmış admin'ler erişebilir; CC-08'de SuperadminGuard ile kısıtlanacak.
    */
+  @Get('account/password')
+  showPasswordForm(
+    @Req() req: Request & { session: PanelSession },
+    @Res() res: Response,
+  ) {
+    return res.render('panel/account/password', {
+      title: 'Şifre Değiştir',
+      breadcrumbs: [
+        { label: 'Hesap', href: '/panel/account' },
+        { label: 'Şifre' },
+      ],
+      currentPath: req.path,
+      username: req.session?.username || 'Admin',
+      error: null,
+      success: null,
+    });
+  }
+
+  @Post('account/password')
+  async changePassword(
+    @Body() dto: ChangePasswordDto,
+    @Req() req: Request & { session: PanelSession },
+    @Res() res: Response,
+  ) {
+    const renderBase = {
+      title: 'Şifre Değiştir',
+      breadcrumbs: [
+        { label: 'Hesap', href: '/panel/account' },
+        { label: 'Şifre' },
+      ],
+      currentPath: req.path,
+      username: req.session?.username || 'Admin',
+    };
+
+    if (dto.newPassword !== dto.confirmPassword) {
+      return res.render('panel/account/password', {
+        ...renderBase,
+        error: 'Yeni şifreler eşleşmiyor',
+        success: null,
+      });
+    }
+
+    const user = await this.adminUsersService.verify(
+      req.session?.username || '',
+      dto.currentPassword,
+    );
+    if (!user) {
+      return res.render('panel/account/password', {
+        ...renderBase,
+        error: 'Mevcut şifre hatalı',
+        success: null,
+      });
+    }
+
+    await this.adminUsersService.changePassword(
+      user._id.toString(),
+      dto.newPassword,
+    );
+
+    try {
+      await this.auditService.record({
+        adminId: user._id.toString(),
+        adminUsername: user.username,
+        action: 'PASSWORD_CHANGE',
+      });
+    } catch {
+      // audit log hatası password change'i engellemez
+    }
+
+    req.session.destroy(() => {
+      res.clearCookie('panel.sid');
+      res.redirect('/panel/login?passwordChanged=1');
+    });
+  }
+
   @Get('audit')
   async showAudit(
     @Req() req: Request & { session: PanelSession },
