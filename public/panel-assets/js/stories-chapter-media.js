@@ -263,7 +263,6 @@
         const hidden = m.hidden === true;
         const thumbRaw = m.thumbnail || '';
         const url = esc(m.url || '');
-        // Legacy veri'de thumbnail bazen .mp4 URL'inin aynısı — img olarak render edilemez.
         const thumbIsImage = thumbRaw && /\.(jpe?g|png|webp|gif|avif)(\?|$)/i.test(thumbRaw.split('?')[0]);
         const thumb = thumbIsImage ? esc(thumbRaw) : '';
         const hiddenBadge = hidden
@@ -274,11 +273,8 @@
           : '';
         const inner = isVid
           ? `
-              ${thumb
-                ? `<img src="${thumb}" alt="" class="w-full h-full object-cover" loading="lazy"/>`
-                : `<video src="${url}#t=0.5" class="w-full h-full object-cover" preload="metadata" muted playsinline></video>`
-              }
-              <span class="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/40 transition pointer-events-none">
+              <video src="${url}#t=0.5" ${thumb ? `poster="${thumb}"` : ''} class="w-full h-full object-cover bg-black" preload="metadata" muted playsinline></video>
+              <span class="absolute inset-0 flex items-center justify-center bg-black/25 group-hover:bg-black/10 transition pointer-events-none">
                 <i class="ki-filled ki-play text-white text-3xl drop-shadow-lg"></i>
               </span>
             `
