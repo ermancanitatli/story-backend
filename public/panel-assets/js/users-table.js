@@ -8,6 +8,8 @@
     isDeleted: '',
     page: 0,
     limit: 25,
+    sortBy: 'createdAt',
+    sortDir: 'desc',
   };
   let totalCount = 0;
 
@@ -33,8 +35,8 @@
     if (state.isDeleted !== '') params.set('isDeleted', state.isDeleted);
     params.set('limit', state.limit);
     params.set('offset', state.page * state.limit);
-    params.set('sortBy', 'createdAt');
-    params.set('sortDir', 'desc');
+    params.set('sortBy', state.sortBy);
+    params.set('sortDir', state.sortDir);
 
     const tbody = document.getElementById('users-tbody');
     tbody.innerHTML =
@@ -74,7 +76,14 @@
           <td>${fmt(u.lastSeen || u.lastLoginAt)}</td>
           <td>${status}</td>
           <td class="text-end">
-            <button class="kt-btn kt-btn-sm kt-btn-outline edit-btn" data-id="${esc(u._id)}">Düzenle</button>
+            <div class="flex items-center justify-end gap-2">
+              <button class="kt-btn kt-btn-sm kt-btn-outline edit-btn" data-id="${esc(u._id)}">Düzenle</button>
+              ${
+                u.isBanned
+                  ? `<button class="kt-btn kt-btn-sm kt-btn-outline action-unban" data-id="${esc(u._id)}">Unban</button>`
+                  : `<button class="kt-btn kt-btn-sm kt-btn-outline action-ban" data-id="${esc(u._id)}">Ban</button>`
+              }
+            </div>
           </td>
         </tr>`;
         })
@@ -140,12 +149,73 @@
     }
   });
 
-  document.addEventListener('click', (e) => {
+  document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.edit-btn');
     if (btn) {
       window.panelToast?.info("Edit modal USER-16 task'ıyla gelecek");
+      return;
+    }
+    const banBtn = e.target.closest('.action-ban');
+    if (banBtn) {
+      if (!confirm('Kullanıcıyı banla?')) return;
+      try {
+        await window.panelApi.post(
+          `/panel/api/users/${banBtn.dataset.id}/ban`,
+          { reason: 'admin action' },
+        );
+        window.panelToast?.success('Banlandı');
+        load();
+      } catch {
+        window.panelToast?.error('Ban işlemi başarısız');
+      }
+      return;
+    }
+    const unbanBtn = e.target.closest('.action-unban');
+    if (unbanBtn) {
+      if (!confirm('Kullanıcının banını kaldır?')) return;
+      try {
+        await window.panelApi.post(
+          `/panel/api/users/${unbanBtn.dataset.id}/unban`,
+          {},
+        );
+        window.panelToast?.success('Ban kaldırıldı');
+        load();
+      } catch {
+        window.panelToast?.error('Unban işlemi başarısız');
+      }
+      return;
     }
   });
 
+  // Sortable kolon başlıkları
+  document.querySelectorAll('th[data-sortable]').forEach((th) => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+      const col = th.dataset.sortable;
+      if (state.sortBy === col) {
+        state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.sortBy = col;
+        state.sortDir = 'desc';
+      }
+      updateSortIndicators();
+      load();
+    });
+  });
+
+  function updateSortIndicators() {
+    document.querySelectorAll('th[data-sortable]').forEach((th) => {
+      const col = th.dataset.sortable;
+      const base = th.dataset.label || th.textContent.replace(/[\s↑↓]+$/, '');
+      th.dataset.label = base;
+      if (state.sortBy === col) {
+        th.textContent = base + (state.sortDir === 'asc' ? ' ↑' : ' ↓');
+      } else {
+        th.textContent = base;
+      }
+    });
+  }
+
+  updateSortIndicators();
   load();
 })();
