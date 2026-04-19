@@ -1,0 +1,14 @@
+[
+  {
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
+    "AllowedOrigins": [
+      "https://api.xtingmobile.com",
+      "https://panel.storyapp.app",
+      "http://localhost:3000",
+      "http://localhost:3001"
+    ],
+    "AllowedHeaders": ["Content-Type", "Content-Length", "Authorization"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
