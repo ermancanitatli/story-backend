@@ -500,6 +500,16 @@ export class MultiplayerService {
       }
     }
 
+    // === DEBUG: response shape'ini gör ===
+    this.logger.warn(
+      `[dual-pov][debug] response keys: scenes=${!!grokResponse.scenes} ` +
+        `scene_keys=${grokResponse.scenes ? Object.keys(grokResponse.scenes).join(',') : 'none'} ` +
+        `currentScene=${!!grokResponse.currentScene} ` +
+        `choices_arr=${Array.isArray(grokResponse.choices)} ` +
+        `localizedChoices=${!!(grokResponse as any).localizedChoices} ` +
+        `active_player_confirmation=${(grokResponse as any).active_player_confirmation || 'none'}`,
+    );
+
     // === DUAL POV VALIDATION — scenes.host === scenes.guest ise guest delta retry ===
     // Same-lang dual perspective mode: scenes.host ve scenes.guest byte-eş olmamalı.
     // Eş ise guest POV'u tek başına ucuz bir LLM çağrısıyla yeniden üret.
