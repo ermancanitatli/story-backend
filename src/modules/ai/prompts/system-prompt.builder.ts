@@ -217,50 +217,41 @@ This is the STORY's FINAL chapter (${params.currentChapter}/${params.totalChapte
   } else if (params.pacingHint === 'soft') {
     prompt += `
 
-## 🎬 CHAPTER CLOSING DECISION (Soft Window)
-This chapter has reached its natural closing window (reached minimum steps for a full chapter arc).
+## Pacing — Chapter Length Awareness
+This chapter has developed enough content for a natural closing to become possible.
+Continue the story NATURALLY. Do NOT rush to close the chapter.
 
-YOU MUST DECIDE NOW:
-Does this scene represent a fitting chapter end? A fitting end is:
-  • A resolved emotional beat (confession, realization, decision)
-  • A quiet reflective moment (pause, sigh, looking away)
-  • A decision point that naturally transitions to a new time/place
-  • A cliffhanger that begs a skip forward
+Only set effects.suggestChapterTransition=true if the CURRENT scene you just wrote is organically a strong chapter ending, such as:
+  • A major emotional peak that just resolved (kiss, reveal, decision made)
+  • A character leaving the scene or location naturally
+  • A clear time/focus shift emerging from the scene itself
+  • A dramatic pause or cliffhanger that the writing itself produces
 
-→ If YES, the current scene IS the chapter's closing beat:
-    • Write currentScene as a gentle closing moment (no new subplot, no unresolved hook dragging on)
-    • MANDATORY: effects.suggestChapterTransition = true
-    • The NEXT scene (not this one) will begin the next chapter automatically
+If the scene is still mid-action, mid-conversation, or mid-tension: effects.suggestChapterTransition=false.
+Prefer false unless the chapter truly wants to close. Let the story breathe.
 
-→ If NO, continue the current arc:
-    • MANDATORY: effects.suggestChapterTransition = false
-    • Continue pacing naturally, but keep in mind the chapter should close soon
-
-CRITICAL: effects.suggestChapterTransition MUST be a boolean (true or false). Silence / null / omission is an error and the response will be rejected.`;
+MANDATORY: effects.suggestChapterTransition must be a boolean (true or false).`;
   } else if (params.pacingHint === 'pressure') {
     prompt += `
 
-## 🚨 CHAPTER CLOSING PRESSURE (Must Wrap Up)
-This chapter has run LONGER than ideal and MUST close soon. The story is being dragged.
+## Pacing — Time to Wind Down
+The chapter has run long. Begin guiding the narrative toward a graceful close within the next 1-2 scenes.
 
-Your task for THIS scene:
-  • Create a clear wind-down beat: complete the current emotional thread, introduce a pause, or hint at a scene shift
-  • Do NOT introduce new subplots, new characters, or new open questions
-  • Focus on resolving what is already open
+This scene should:
+  • Resolve or pause the active emotional thread (don't leave mid-sentence tensions)
+  • Avoid introducing new characters, new settings, or new mysteries
+  • Move toward a beat that allows a natural chapter end
 
-Decision:
-→ STRONGLY PREFER: effects.suggestChapterTransition = true
-  (only write false if the scene truly cannot close — but explain in acknowledged_directive why)
-→ If you MUST continue: keep the scene SHORT (2-3 sentences) and make it clearly transitional.
+If this scene produces a clean closing moment: effects.suggestChapterTransition=true.
+If the scene still needs one more beat to close properly: effects.suggestChapterTransition=false, but keep this scene focused on wind-down.
 
-CRITICAL: effects.suggestChapterTransition MUST be a boolean. Silence / omission is a failure.`;
+MANDATORY: effects.suggestChapterTransition must be a boolean.`;
   } else {
-    // pacingHint === 'none' — normal akış, yine de MANDATORY alan
+    // pacingHint === 'none' — normal akış
     prompt += `
 
-## Pacing — Normal Flow
-Not yet in the chapter closing window. Continue developing the current arc normally.
-MANDATORY: effects.suggestChapterTransition = false (not yet ready to close this chapter).`;
+## Pacing — Normal
+Develop the story freely. MANDATORY: effects.suggestChapterTransition = false.`;
   }
 
   if (censor) {

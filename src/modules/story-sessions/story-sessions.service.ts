@@ -209,13 +209,14 @@ export class StorySessionsService {
     const { session, type, userChoice } = params;
     const clone = session.storyClone;
 
-    // Recent history (son 10 progress)
+    // Recent history (son 10 progress) — descending order, [0] = en son step
     const recentProgressDocs = await this.progressModel
       .find({ sessionId: session._id })
       .sort({ stepNumber: -1 })
       .limit(10)
       .exec();
-    const recentHistory = recentProgressDocs
+    // ⚠️ .reverse() in-place array'i değiştirdiği için orijinali koru
+    const recentHistory = [...recentProgressDocs]
       .reverse()
       .map((p) => p.currentScene)
       .filter(Boolean);
