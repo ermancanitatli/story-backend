@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Query,
   Render,
   Req,
   Res,
@@ -15,6 +16,7 @@ import { PanelPublic } from './decorators/panel-public.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { PanelHtmlExceptionFilter } from '../../common/filters/panel-html-exception.filter';
 import { AdminUsersService } from './admin-users.service';
+import { AdminAuditLogService } from './admin-audit-log.service';
 
 type PanelSession = {
   adminId?: string;
@@ -28,7 +30,10 @@ type PanelSession = {
 @UseGuards(SessionAuthGuard)
 @UseFilters(PanelHtmlExceptionFilter)
 export class PanelController {
-  constructor(private readonly adminUsersService: AdminUsersService) {}
+  constructor(
+    private readonly adminUsersService: AdminUsersService,
+    private readonly auditService: AdminAuditLogService,
+  ) {}
 
   @Get('login')
   @PanelPublic()
@@ -91,5 +96,45 @@ export class PanelController {
       currentPath: req.path,
       breadcrumbs: [{ label: 'Dashboard' }],
     };
+  }
+
+  /**
+   * Audit log viewer (paginated).
+   * Şu an tüm giriş yapmış admin'ler erişebilir; CC-08'de SuperadminGuard ile kısıtlanacak.
+   */
+  @Get('audit')
+  async showAudit(
+    @Req() req: Request & { session: PanelSession },
+    @Res() res: Response,
+    @Query() query: any,
+  ) {
+    const limit = Math.min(
+      Math.max(parseInt(query.limit || '25', 10) || 25, 1),
+      100,
+    );
+    const offset = Math.max(parseInt(query.offset || '0', 10) || 0, 0);
+
+    const filter = {
+      action: query.action || undefined,
+      targetUserId: query.targetUserId || undefined,
+      adminId: query.adminId || undefined,
+    };
+
+    const [logs, total] = await Promise.all([
+      this.auditService.list(filter, limit, offset),
+      this.auditService.count(filter),
+    ]);
+
+    return res.render('panel/audit/list', {
+      logs,
+      total,
+      limit,
+      offset,
+      filter,
+      currentPath: req.path,
+      username: req.session?.username || 'Admin',
+      title: 'Audit Log',
+      breadcrumbs: [{ label: 'Audit' }],
+    });
   }
 }

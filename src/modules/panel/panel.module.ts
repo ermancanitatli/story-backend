@@ -8,6 +8,8 @@ import { AdminUsersManagementService } from './admin-users-management.service';
 import { AdminUser, AdminUserSchema } from './schemas/admin-user.schema';
 import { AdminAuditLog, AdminAuditLogSchema } from './schemas/admin-audit-log.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
+import { Friendship, FriendshipSchema } from '../friendships/schemas/friendship.schema';
+import { StorySession, StorySessionSchema } from '../story-sessions/schemas/story-session.schema';
 import { AuditInterceptor } from './interceptors/audit.interceptor';
 import { SocketModule } from '../socket/socket.module';
 
@@ -18,6 +20,8 @@ import { SocketModule } from '../socket/socket.module';
       { name: AdminUser.name, schema: AdminUserSchema },
       { name: AdminAuditLog.name, schema: AdminAuditLogSchema },
       { name: User.name, schema: UserSchema },
+      { name: Friendship.name, schema: FriendshipSchema },
+      { name: StorySession.name, schema: StorySessionSchema },
     ]),
     forwardRef(() => SocketModule),
   ],

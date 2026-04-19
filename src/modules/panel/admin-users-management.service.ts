@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, isValidObjectId, Types } from 'mongoose';
 import { User } from '../users/schemas/user.schema';
+import { Friendship } from '../friendships/schemas/friendship.schema';
+import { StorySession } from '../story-sessions/schemas/story-session.schema';
 
 export interface ListUsersFilter {
   search?: string;
@@ -21,9 +23,20 @@ export interface ListUsersResult {
   offset: number;
 }
 
+export interface UserDetailResult {
+  user: User;
+  friendCount: number;
+  recentSessions: StorySession[];
+  storyCount: number;
+}
+
 @Injectable()
 export class AdminUsersManagementService {
-  constructor(@InjectModel(User.name) private userModel: Model<User>) {}
+  constructor(
+    @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(Friendship.name) private friendshipModel: Model<Friendship>,
+    @InjectModel(StorySession.name) private storySessionModel: Model<StorySession>,
+  ) {}
 
   async listUsers(filter: ListUsersFilter = {}): Promise<ListUsersResult> {
     const limit = Math.min(Math.max(filter.limit ?? 25, 1), 100);
@@ -58,5 +71,25 @@ export class AdminUsersManagementService {
     ]);
 
     return { users, total, limit, offset };
+  }
+
+  async getUserDetail(id: string): Promise<UserDetailResult> {
+    if (!isValidObjectId(id)) {
+      throw new NotFoundException('User not found');
+    }
+    const objectId = new Types.ObjectId(id);
+    const [user, friendCount, recentSessions, storyCount] = await Promise.all([
+      this.userModel.findById(id).lean().exec() as Promise<User | null>,
+      this.friendshipModel.countDocuments({ members: objectId }).exec(),
+      this.storySessionModel
+        .find({ userId: objectId })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .lean()
+        .exec() as unknown as Promise<StorySession[]>,
+      this.storySessionModel.countDocuments({ userId: objectId }).exec(),
+    ]);
+    if (!user) throw new NotFoundException('User not found');
+    return { user, friendCount, recentSessions, storyCount };
   }
 }
