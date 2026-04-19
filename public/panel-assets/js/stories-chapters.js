@@ -52,7 +52,34 @@
             <button type="button" class="kt-btn kt-btn-sm kt-btn-ghost chapter-move-down" ${ci === chapters.length - 1 ? 'disabled' : ''}>↓</button>
             <button type="button" class="kt-btn kt-btn-sm kt-btn-destructive chapter-remove">Sil</button>
           </div>
-          <textarea class="kt-input chapter-summary mb-3" rows="2" placeholder="Bölüm özeti">${esc(ch.summary || '')}</textarea>
+          <textarea class="kt-input chapter-summary mb-3" rows="2" placeholder="Bölüm özeti (AI'a bağlam olarak gider)">${esc(ch.summary || '')}</textarea>
+
+          <!-- Chapter transition açılış sahnesi — deterministik, AI üretmez -->
+          <div class="mb-3 rounded-md border border-border p-3" style="background:rgba(59,130,246,0.04);">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-sm font-semibold">🎬 Açılış Sahnesi (Starting Scene)</span>
+              <span class="text-xs text-muted-foreground">— AI atlanır, bu metin doğrudan gösterilir</span>
+            </div>
+            <textarea class="kt-input chapter-starting-scene" rows="4" placeholder="Örn: 'Üç ay sonra evdesin, pencereden yağmur izlersin.' — Bu bölüme geçildiğinde oyuncuya gösterilecek deterministik açılış metni. Önceki bölümün sonuyla çelişse bile bu metin kullanılır (time jump / location change için ideal). Boş bırakılırsa AI kullanılır.">${esc(ch.startingScene || '')}</textarea>
+            <div class="flex items-center gap-2 mt-2">
+              <select class="kt-input chapter-starting-locale" style="max-width:120px;">
+                <option value="en">EN</option>
+                <option value="tr">TR</option>
+                <option value="ar">AR</option>
+                <option value="de">DE</option>
+                <option value="es">ES</option>
+                <option value="fr">FR</option>
+                <option value="it">IT</option>
+                <option value="ja">JA</option>
+                <option value="ko">KO</option>
+                <option value="pt">PT</option>
+                <option value="ru">RU</option>
+                <option value="zh">ZH</option>
+              </select>
+              <span class="text-xs text-muted-foreground">Yukarıdaki metin seçili dil için, EN dışındakiler otomatik çeviri olarak saklanır.</span>
+            </div>
+          </div>
+
           <div class="flex items-center justify-between mb-2">
             <span class="text-sm font-medium">Sahneler (${scenes.length})</span>
             <button type="button" class="kt-btn kt-btn-xs kt-btn-outline scene-add">+ Sahne</button>
@@ -86,6 +113,33 @@
       });
       card.querySelector('.chapter-summary').addEventListener('input', e => {
         window.__story.chapters[ci].summary = e.target.value;
+        persistChapters();
+      });
+
+      // Starting scene — multi-locale
+      const startingScene = card.querySelector('.chapter-starting-scene');
+      const startingLocale = card.querySelector('.chapter-starting-locale');
+      function loadStartingSceneForLocale() {
+        const locale = startingLocale.value;
+        const ch = window.__story.chapters[ci];
+        const translations = ch.startingSceneTranslations || {};
+        // EN için flat startingScene fallback
+        if (locale === 'en') {
+          startingScene.value = translations.en || ch.startingScene || '';
+        } else {
+          startingScene.value = translations[locale] || '';
+        }
+      }
+      startingLocale.addEventListener('change', loadStartingSceneForLocale);
+      startingScene.addEventListener('input', e => {
+        const locale = startingLocale.value;
+        const ch = window.__story.chapters[ci];
+        if (!ch.startingSceneTranslations) ch.startingSceneTranslations = {};
+        ch.startingSceneTranslations[locale] = e.target.value;
+        // EN her zaman flat startingScene ile senkron kalsın (backend fallback için)
+        if (locale === 'en') {
+          ch.startingScene = e.target.value;
+        }
         persistChapters();
       });
       card.querySelector('.chapter-remove').addEventListener('click', () => {

@@ -82,6 +82,9 @@ export interface PromptParams {
   hostName?: string;
   guestName?: string;
   activePlayerName?: string;
+  // Chapter transition talimatı — yeni chapter'a geçildikten sonraki ilk Grok çağrısında
+  // kullanılır. Recent history ile chapter summary çelişirse chapter summary'yi öncele.
+  transitionBlock?: string;
 }
 
 export function buildSystemPrompt(params: PromptParams): string {
@@ -112,6 +115,7 @@ ${params.characters.map((c) => `- ${c.name}: ${c.description || 'No description'
 
 ## Current Chapter: ${params.currentChapter}${params.chapterTitle ? ` - ${params.chapterTitle}` : ''}
 ${params.chapterSummary || ''}
+${params.transitionBlock ? `\n${params.transitionBlock}\n` : ''}
 
 ## Player: ${params.playerName || 'Player'}${params.playerGender ? ` (${params.playerGender})` : ''}
 

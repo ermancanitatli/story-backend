@@ -211,32 +211,120 @@ export class StorySessionsService {
       .map((p) => p.currentScene)
       .filter(Boolean);
 
+    // === CHAPTER TRANSITION DETECTION (Grok çağrısından ÖNCE) ===
+    // Bu step chapter boundary'yi geçiyor mu?
+    const newChapterStepPreview = session.chapterStepCount + 1;
+    const willTransition =
+      type !== 'start' && newChapterStepPreview >= STEPS_PER_CHAPTER;
+    const nextChapterIdx = willTransition
+      ? session.currentChapter // 0-indexed next chapter in array (currentChapter 1-based, array 0-based)
+      : -1;
+    const nextChapter =
+      willTransition && clone?.chapters && nextChapterIdx < clone.chapters.length
+        ? clone.chapters[nextChapterIdx]
+        : null;
+
+    // Chapter transition + admin startingScene yazmışsa Grok'u atla
+    const locale = params.languageCode || 'en';
+    const nextChapterStartingScene = nextChapter
+      ? nextChapter.startingSceneTranslations?.[locale] ||
+        nextChapter.startingSceneTranslations?.['en'] ||
+        nextChapter.startingScene ||
+        null
+      : null;
+
+    // === Önceki chapter için one-shot transition block (chapter'a girdikten SONRAKİ ilk user choice'ta) ===
+    // session.chapterStepCount === 0 && currentChapter > 1 ise, bu adım yeni chapter'ın 2. sahnesi.
+    // Önceki chapter'ın gerçekte ne olduğunu Grok'a hatırlatmamız lazım.
+    const justEnteredNewChapter =
+      type === 'continue' && session.chapterStepCount === 0 && session.currentChapter > 1;
+    const currentChapterIdx = session.currentChapter - 1; // 0-based
+    const currentChapterData =
+      clone?.chapters && currentChapterIdx >= 0 && currentChapterIdx < clone.chapters.length
+        ? clone.chapters[currentChapterIdx]
+        : null;
+    const previousChapterData =
+      clone?.chapters && currentChapterIdx - 1 >= 0
+        ? clone.chapters[currentChapterIdx - 1]
+        : null;
+
+    let transitionBlock: string | undefined;
+    if (justEnteredNewChapter && currentChapterData) {
+      const curTitle = currentChapterData.title || '';
+      const curSummary =
+        currentChapterData.summary || '';
+      const prevTitle = previousChapterData?.title || 'Previous chapter';
+      transitionBlock = [
+        `[CHAPTER TRANSITION — MANDATORY]`,
+        `The previous chapter "${prevTitle}" just ended.`,
+        `You are now in: "${curTitle}".`,
+        curSummary ? `Chapter context (must be honored): ${curSummary}` : '',
+        `Override any conflicting location/time/state from recent history if needed. The player is now in the new chapter's context. Respond from this new situation.`,
+      ]
+        .filter(Boolean)
+        .join('\n');
+    }
+
     // Prompt oluştur
     const promptParams: PromptParams = {
       storyTitle: clone?.title || 'Untitled',
       storySummary: clone?.summary || '',
       characters: (clone?.characters || []) as any[],
       currentChapter: session.currentChapter,
+      chapterTitle: currentChapterData?.title,
+      chapterSummary: currentChapterData?.summary,
       playerName: params.playerName,
       playerGender: params.playerGender,
       languageCode: params.languageCode,
       emotionalStates: session.emotionalStates as any,
       censorship: true,
       recentHistory,
+      transitionBlock,
+    } as any;
+
+    // === CHAPTER TRANSITION PATH: Admin startingScene yazmışsa Grok atla ===
+    type GrokLikeResponse = {
+      currentScene?: string;
+      scenes?: any;
+      choices?: any;
+      effects?: any;
+      isEnding?: boolean;
+      endingType?: string;
     };
+    let grokResponse: GrokLikeResponse;
+    let skippedGrok = false;
 
-    const systemPrompt = buildSystemPrompt(promptParams);
-    const userMessage = buildUserMessage({
-      type,
-      userChoice,
-      recentHistory,
-    });
+    if (willTransition && nextChapterStartingScene) {
+      this.logger.log(
+        `[chapter-transition] Skipping Grok for session ${session._id} — using deterministic startingScene for chapter ${(nextChapterIdx as number) + 1}`,
+      );
+      // Default 4 generic "continue" choice'u üret — AI sonraki adımda gerçek seçimleri üretecek
+      grokResponse = {
+        currentScene: nextChapterStartingScene,
+        choices: [
+          { id: 'c1', text: 'Devam et', type: 'neutral' },
+          { id: 'c2', text: 'Etrafı incele', type: 'neutral' },
+          { id: 'c3', text: 'Düşün', type: 'neutral' },
+          { id: 'c4', text: 'Harekete geç', type: 'neutral' },
+        ],
+        effects: { emotionalChanges: {} },
+        isEnding: false,
+      };
+      skippedGrok = true;
+    } else {
+      const systemPrompt = buildSystemPrompt(promptParams);
+      const userMessage = buildUserMessage({
+        type,
+        userChoice,
+        recentHistory,
+      } as any);
 
-    // Grok API çağrısı
-    const grokResponse = await this.aiService.callGrokAPI({
-      systemPrompt,
-      userMessage,
-    });
+      // Grok API çağrısı
+      grokResponse = await this.aiService.callGrokAPI({
+        systemPrompt,
+        userMessage,
+      });
+    }
 
     // Emotional state hesapla (×3 multiplier, clamp -100 to +100)
     const emotionalChanges = grokResponse.effects?.emotionalChanges || {};
@@ -260,6 +348,13 @@ export class StorySessionsService {
     if (newChapterStep >= STEPS_PER_CHAPTER && !grokResponse.isEnding) {
       newChapter += 1;
       isChapterTransition = true;
+    }
+
+    // Skip Grok path için logger bilgisi
+    if (skippedGrok) {
+      this.logger.log(
+        `[chapter-transition] Deterministic chapter ${newChapter} intro delivered`,
+      );
     }
 
     // Progress kaydet
