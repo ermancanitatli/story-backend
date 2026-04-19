@@ -88,6 +88,8 @@ export class PanelController {
     return {
       title: 'Panel',
       username: req.session?.username || 'Admin',
+      currentPath: req.path,
+      breadcrumbs: [{ label: 'Dashboard' }],
     };
   }
 }
