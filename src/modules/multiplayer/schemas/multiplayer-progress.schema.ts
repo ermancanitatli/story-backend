@@ -34,6 +34,8 @@ export class MultiplayerProgress extends Document {
   @Prop({ default: false }) isChapterTransition: boolean;
   @Prop({ default: false }) isEnding: boolean;
   @Prop() endingType?: string;
+  @Prop({ default: false }) suggestChapterTransition: boolean;
+  @Prop() eventSummary?: string;
 }
 
 export const MultiplayerProgressSchema = SchemaFactory.createForClass(MultiplayerProgress);

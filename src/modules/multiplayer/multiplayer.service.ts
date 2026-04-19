@@ -5,12 +5,28 @@ import { MultiplayerSession } from './schemas/multiplayer-session.schema';
 import { MultiplayerProgress } from './schemas/multiplayer-progress.schema';
 import { StoriesService } from '../stories/stories.service';
 import { AiService } from '../ai/ai.service';
-import { buildSystemPrompt, buildUserMessage } from '../ai/prompts/system-prompt.builder';
+import { buildSystemPrompt } from '../ai/prompts/system-prompt.builder';
 import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class MultiplayerService {
   private readonly logger = new Logger(MultiplayerService.name);
+
+  // Idempotency cache: aynı (sessionId, turnOrder, choiceId) kombinasyonunun
+  // TTL içinde 2. kez gelmesini engeller. Değer = Promise<MultiplayerProgress>,
+  // böylece aynı anda gelen iki istek tek pipeline çalıştırır.
+  private readonly idempotencyCache = new Map<
+    string,
+    { value: Promise<MultiplayerProgress>; expiresAt: number }
+  >();
+  private readonly IDEMPOTENCY_TTL_MS = 60_000;
+
+  private cleanupIdempotencyCache(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.idempotencyCache) {
+      if (entry.expiresAt <= now) this.idempotencyCache.delete(key);
+    }
+  }
 
   constructor(
     @InjectModel(MultiplayerSession.name) private sessionModel: Model<MultiplayerSession>,
@@ -110,12 +126,11 @@ export class MultiplayerService {
 
     const hostLang = session.hostLanguageCode || 'en';
     const guestLang = session.guestLanguageCode || 'en';
-    // Bilingual = 2 farklı dil (aynı dil ise tek languages list'i).
-    // Dual perspective ayrı bir kavram — multiplayer'da her zaman aktif.
     const isBilingual = hostLang !== guestLang;
-    const languages = isBilingual ? [hostLang, guestLang] : [hostLang];
+    const primaryLang = hostLang;
 
-    const systemPrompt = buildSystemPrompt({
+    // Call 1 — Event Orchestrator (initial scene = story opening)
+    const orchestratorContext = buildSystemPrompt({
       storyTitle: clone.title || 'Interactive Story',
       storySummary: clone.summary || '',
       characters: (clone.characters || []) as any[],
@@ -126,92 +141,66 @@ export class MultiplayerService {
       hostName: session.hostName,
       guestName: session.guestName,
       activePlayerName: session.hostName,
-      languages,
-      requireDualPerspectiveSameLang: !isBilingual, // aynı dilde de dual perspective
-    });
-    const userMessage = buildUserMessage({ type: 'start', userChoice: '', recentHistory: [] });
-
-    // Multiplayer dual perspective — iki sahne + 4 choice JSON'ı üretiliyor,
-    // token ihtiyacı tek-sahneden ~2x. Base'i yüksek tut ki parse fail olmasın.
-    const grokResponse = await this.aiService.callGrokAPI({
-      systemPrompt,
-      userMessage,
-      baseMaxTokens: 8000,
+      languages: [primaryLang],
+      requireDualPerspectiveSameLang: false,
     });
 
-    // DUAL POV VALIDATION (initial scene) — normalize + similarity
-    if (grokResponse.scenes) {
-      const sc: any = grokResponse.scenes;
-      if (sc.host && sc.guest) {
-        const h = String(sc.host).trim();
-        const g = String(sc.guest).trim();
-        const nH = h.toLowerCase().replace(/[\s\n\r]+/g, ' ').replace(/[.,!?;:'"\-—()]+/g, '').trim();
-        const nG = g.toLowerCase().replace(/[\s\n\r]+/g, ' ').replace(/[.,!?;:'"\-—()]+/g, '').trim();
-        const sharedPrefixLen = (() => {
-          const len = Math.min(nH.length, nG.length);
-          let i = 0;
-          while (i < len && nH[i] === nG[i]) i++;
-          return i;
-        })();
-        const similarity = sharedPrefixLen / Math.max(nH.length, nG.length, 1);
-        if (h && (nH === nG || similarity > 0.7)) {
-          this.logger.warn(
-            `[dual-pov][initial] similar scenes (identical=${nH === nG}, similarity=${similarity.toFixed(2)}), delta retry`,
-          );
-          try {
-            const rewritten = await this.aiService.generatePovPerspective({
-              existingScene: h,
-              existingPovName: session.hostName || 'Host',
-              targetPovName: session.guestName || 'Guest',
-              otherName: session.hostName || 'Host',
-              languageCode: session.hostLanguageCode || 'en',
-            });
-            if (rewritten && rewritten !== h) {
-              sc.guest = rewritten;
-              this.logger.log(`[dual-pov][initial] delta rewrite succeeded`);
-            }
-          } catch (err) {
-            this.logger.warn(
-              `[dual-pov][initial] delta err: ${(err as Error).message}`,
-            );
-          }
-        }
-      }
+    const hostName = session.hostName || 'Host';
+    const guestName = session.guestName || 'Guest';
+
+    const grokResponse = await this.aiService.generateEventOrchestrator({
+      storyContext: orchestratorContext,
+      choiceText: '[STORY OPENING — introduce characters, set the scene]',
+      activePlayerName: hostName,
+      hostName,
+      guestName,
+      languageCode: primaryLang,
+    });
+
+    const eventChronicle = grokResponse.currentScene || '';
+    const validChoices = (Array.isArray(grokResponse.choices) ? grokResponse.choices : []).filter(
+      (c: any) => c && typeof c.text === 'string' && c.text.trim().length > 0,
+    );
+    if (validChoices.length < 2) {
+      throw new Error(`Initial scene orchestrator returned ${validChoices.length} valid choices`);
     }
 
-    // Çift dilli response normalize et
-    let sceneText: string;
-    let choicesData: any;
-    let scenes: Record<string, string> | undefined;
+    // Call 2 & 3 — paralel POV rewrites
+    const [hostResult, guestResult] = await Promise.allSettled([
+      this.aiService.generatePovPerspective({
+        eventChronicle,
+        povName: hostName,
+        otherName: guestName,
+        languageCode: hostLang,
+      }),
+      this.aiService.generatePovPerspective({
+        eventChronicle,
+        povName: guestName,
+        otherName: hostName,
+        languageCode: guestLang,
+      }),
+    ]);
+
+    const hostScene =
+      hostResult.status === 'fulfilled' && hostResult.value && hostResult.value.trim().length >= 30
+        ? hostResult.value.trim()
+        : eventChronicle;
+    const guestScene =
+      guestResult.status === 'fulfilled' && guestResult.value && guestResult.value.trim().length >= 30
+        ? guestResult.value.trim()
+        : eventChronicle;
+
+    let scenes: Record<string, string>;
     let localizedChoices: Record<string, any> | undefined;
+    let sceneText: string;
 
-    if (grokResponse.scenes) {
-      const sceneKeys = Object.keys(grokResponse.scenes);
-      const isDualPerspective =
-        sceneKeys.includes('host') && sceneKeys.includes('guest');
-
-      if (isDualPerspective) {
-        // Same-language dual perspective: scenes.host + scenes.guest
-        scenes = grokResponse.scenes; // {host: "...", guest: "..."}
-        // choices tek array (her iki oyuncu aynı dili kullanıyor)
-        choicesData = grokResponse.choices || [];
-        // Fallback currentScene — host view (ilk turn host aktif)
-        sceneText = grokResponse.scenes.host || grokResponse.scenes.guest || '';
-      } else {
-        // Bilingual — scenes[hostLang] + scenes[guestLang]
-        scenes = grokResponse.scenes;
-        const rawLC = grokResponse.localizedChoices || {};
-        localizedChoices = {};
-        for (const lang of Object.keys(rawLC)) {
-          localizedChoices[lang] = this.normalizeChoices(rawLC[lang]);
-        }
-        sceneText = grokResponse.scenes[languages[0]] || Object.values(grokResponse.scenes)[0] || '';
-        choicesData = localizedChoices[languages[0]] || Object.values(localizedChoices)[0] || [];
-      }
+    if (isBilingual) {
+      scenes = { [hostLang]: hostScene, [guestLang]: guestScene };
+      sceneText = hostScene;
+      localizedChoices = { [hostLang]: validChoices, [guestLang]: validChoices };
     } else {
-      // Tek dilli, tek perspective (nadir durum)
-      sceneText = grokResponse.currentScene || '';
-      choicesData = grokResponse.choices || [];
+      scenes = { host: hostScene, guest: guestScene };
+      sceneText = hostScene;
     }
 
     const progress = await this.progressModel.create({
@@ -219,12 +208,14 @@ export class MultiplayerService {
       activePlayerId: session.activePlayerId,
       turnOrder: 1,
       currentScene: sceneText,
-      choices: this.normalizeChoices(choicesData),
+      choices: this.normalizeChoices(validChoices),
       scenes,
       localizedChoices,
       currentChapter: 1,
       effects: grokResponse.effects,
       isEnding: false,
+      eventSummary: eventChronicle,
+      suggestChapterTransition: !!grokResponse.effects?.suggestChapterTransition,
     });
 
     await this.sessionModel.findByIdAndUpdate(session._id, {
@@ -233,7 +224,9 @@ export class MultiplayerService {
       currentStep: 1,
     });
 
-    this.logger.log(`Initial scene generated for matchmaking session ${session._id}`);
+    this.logger.log(
+      `[3call] initial scene generated for session ${session._id} (bilingual=${isBilingual})`,
+    );
   }
 
   /**
@@ -324,6 +317,42 @@ export class MultiplayerService {
     if (session.phase !== 'playing') throw new BadRequestException('Session not in playing phase');
     if (session.activePlayerId?.toString() !== userId) throw new BadRequestException('Not your turn');
 
+    // Idempotency — aynı (sessionId, turnOrder, choiceId) için tek pipeline çalıştır.
+    this.cleanupIdempotencyCache();
+    const idempotencyKey = `${sessionId}:${session.turnOrder}:${choice.id}`;
+    const cached = this.idempotencyCache.get(idempotencyKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      this.logger.log(`[idempotency] cache hit for ${idempotencyKey}`);
+      return cached.value;
+    }
+
+    const pipelinePromise = this.runSubmitChoicePipeline(session, userId, choice);
+    this.idempotencyCache.set(idempotencyKey, {
+      value: pipelinePromise,
+      expiresAt: Date.now() + this.IDEMPOTENCY_TTL_MS,
+    });
+    return pipelinePromise;
+  }
+
+  private async runSubmitChoicePipeline(
+    session: MultiplayerSession,
+    userId: string,
+    choice: { id: string; text: string; type?: string },
+  ): Promise<MultiplayerProgress> {
+    const sessionId = (session._id as any).toString();
+
+    const pipelineEnabled =
+      (process.env.ENABLE_MULTIPLAYER_3CALL_PIPELINE ?? 'true')
+        .toLowerCase() !== 'false';
+    if (!pipelineEnabled) {
+      this.logger.warn(
+        `[3call] pipeline disabled via ENABLE_MULTIPLAYER_3CALL_PIPELINE=false — aborting`,
+      );
+      throw new BadRequestException(
+        'Multiplayer pipeline şu an devre dışı (admin kapattı).',
+      );
+    }
+
     // Save choice to current progress
     if (session.lastProgressId) {
       await this.progressModel.findByIdAndUpdate(session.lastProgressId, {
@@ -342,12 +371,16 @@ export class MultiplayerService {
     const allRecentScenes = [...recentDocs]
       .reverse()
       .map((p: any) => {
+        // 3-call pipeline: eventSummary neutral chronicle — en temiz kaynak, öncelikli
+        if (p.eventSummary && typeof p.eventSummary === 'string') {
+          return p.eventSummary;
+        }
         const sc = p.scenes;
-        // Same-language dual perspective: scenes.host + scenes.guest
+        // Legacy: same-language dual perspective
         if (sc?.host && sc?.guest) {
           return `[${hostLabel} POV]\n${sc.host}\n\n[${guestLabel} POV]\n${sc.guest}`;
         }
-        // Bilingual (tr-en) — her iki dilde ve her iki POV
+        // Legacy: bilingual tagged
         if (sc && typeof sc === 'object') {
           const langs = Object.keys(sc).filter((k) => k !== 'host' && k !== 'guest');
           if (langs.length >= 2) {
@@ -356,7 +389,6 @@ export class MultiplayerService {
               .join('\n\n');
           }
         }
-        // Fallback — eski progress docs (sadece currentScene)
         return p.currentScene || '';
       })
       .filter(Boolean);
@@ -396,7 +428,18 @@ export class MultiplayerService {
       ? [session.hostLanguageCode || 'en', session.guestLanguageCode || 'en']
       : [session.hostLanguageCode || 'en'];
 
-    const systemPrompt = buildSystemPrompt({
+    const activeNameForPrompt =
+      userId === session.hostId?.toString()
+        ? session.hostName || 'Host'
+        : session.guestName || 'Guest';
+
+    // ==========================================================================
+    // 3-CALL PIPELINE — Call 1: Event Orchestrator (neutral chronicle + choices)
+    // ==========================================================================
+    // Orchestrator için system prompt — POV-free, neutral narrator mode.
+    // buildSystemPrompt'a requireDualPerspectiveSameLang=false geçiyoruz çünkü
+    // bu call'da dual sahne üretmesi istemiyoruz; sadece olay özeti + choices.
+    const orchestratorContext = buildSystemPrompt({
       storyTitle: clone.title || '',
       storySummary: clone.summary || '',
       characters: (clone.characters || []) as any[],
@@ -406,225 +449,133 @@ export class MultiplayerService {
       isMultiplayer: true,
       hostName: session.hostName,
       guestName: session.guestName,
-      // Sahne SUBMIT EDEN oyuncunun gözünden yazılmalı (onun seçimi sahneyi şekillendiriyor).
-      // userId = şu an choice submit eden aktif oyuncu.
-      activePlayerName:
-        userId === session.hostId?.toString() ? session.hostName : session.guestName,
-      languages,
-      requireDualPerspectiveSameLang: !isBilingual,
+      activePlayerName: activeNameForPrompt,
+      // Orchestrator tek dilde (hikaye dili) yazar — POV rewriter'lar her oyuncunun diline çevirir
+      languages: [session.hostLanguageCode || session.guestLanguageCode || 'en'],
+      requireDualPerspectiveSameLang: false,
       rollingSummary: tierRollingSummary,
       chapterBridges: tierChapterBridges,
       recentHistory,
     });
-    // Dual POV tail reminder — her zaman aktif (bilingual veya same-lang)
-    const activeNameForPrompt =
-      userId === session.hostId?.toString()
-        ? session.hostName || 'Host'
-        : session.guestName || 'Guest';
-    const userMessage = buildUserMessage({
-      type: 'continue',
-      userChoice: choice.text,
-      recentHistory,
-      rollingSummary: tierRollingSummary,
-      chapterBridges: tierChapterBridges,
-      multiplayerDualPov: {
+
+    const primaryLang = session.hostLanguageCode || session.guestLanguageCode || 'en';
+
+    let grokResponse: any;
+    try {
+      grokResponse = await this.aiService.generateEventOrchestrator({
+        storyContext: orchestratorContext,
+        choiceText: choice.text,
+        activePlayerName: activeNameForPrompt,
         hostName: session.hostName || 'Host',
         guestName: session.guestName || 'Guest',
-        activeName: activeNameForPrompt,
-      },
-    });
-
-    // Multiplayer dual perspective — yüksek token ihtiyacı
-    let grokResponse = await this.aiService.callGrokAPI({
-      systemPrompt,
-      userMessage,
-      baseMaxTokens: 8000,
-    });
-
-    // Bilingual'da tek dilde eksik choice varsa diğer dildeki aynı index'li choice ile doldur
-    // (AI retry'ından önce bu basit patching — çoğu zaman bir dil başarılı oluyor).
-    this.patchBilingualChoicesFromOtherLang(grokResponse);
-
-    // === CHOICE VALIDATION + RETRY (max 3 deneme) ===
-    const CHOICE_MAX_RETRIES = 3;
-    let choiceRetry = 0;
-    while (choiceRetry < CHOICE_MAX_RETRIES) {
-      const check = this.validateMultiplayerChoices(grokResponse);
-      if (check.valid) break;
-      this.logger.warn(
-        `[choice-validate][multi] session=${sessionId} retry=${choiceRetry + 1}/${CHOICE_MAX_RETRIES} — ${check.reason}`,
+        languageCode: primaryLang,
+      });
+    } catch (err) {
+      this.logger.error(
+        `[3call] orchestrator failed for session ${sessionId}: ${(err as Error).message}`,
       );
-      // Bilingual mod için explicit örnek ekle
-      const isBilingualRetry = !!grokResponse.localizedChoices || !!grokResponse.scenes;
-      const bilingualExample = isBilingualRetry
-        ? `\n\nFor bilingual mode, "choices" object MUST have EXACTLY 4 entries for EACH language:\n` +
-          `{\n  "scenes": { "${languages[0]}": "...", "${languages[1] || 'en'}": "..." },\n` +
-          `  "choices": {\n` +
-          `    "${languages[0]}": [\n` +
-          `      {"id":"1","text":"non-empty sentence","type":"action"},\n` +
-          `      {"id":"2","text":"non-empty sentence","type":"dialogue"},\n` +
-          `      {"id":"3","text":"non-empty sentence","type":"exploration"},\n` +
-          `      {"id":"4","text":"non-empty sentence","type":"decision"}\n` +
-          `    ],\n` +
-          `    "${languages[1] || 'en'}": [ /* same 4 choices translated */ ]\n` +
-          `  }\n}\n` +
-          `Both languages MUST have 4 choices with non-empty text. Missing or empty = error.`
-        : '';
-      const retryMsg =
-        userMessage +
-        `\n\n[RESPONSE FORMAT ERROR — ATTEMPT ${choiceRetry + 1}/${CHOICE_MAX_RETRIES}]\n` +
-        `Your previous response had invalid choices: ${check.reason}\n` +
-        `CRITICAL: EXACTLY 4 choices required. Each must have non-empty "text" and valid "type".${bilingualExample}\n` +
-        `Regenerate full JSON now.`;
-      try {
-        grokResponse = await this.aiService.callGrokAPI({
-          systemPrompt,
-          userMessage: retryMsg,
-          baseMaxTokens: 8000,
-        });
-        choiceRetry++;
-      } catch (err) {
-        this.logger.warn(`[choice-validate][multi] retry err: ${(err as Error).message}`);
-        break;
-      }
-    }
-    const finalCheckMP = this.validateMultiplayerChoices(grokResponse);
-    if (!finalCheckMP.valid) {
-      const kept = this.keepValidMultiplayerChoices(grokResponse);
-      // Bilingual mode: minCount her iki dilde de en az 2 olursa kabul (tek dilde eksik olabilir)
-      // Single mode: en az 3 choice olmalı
-      const acceptableThreshold = grokResponse.localizedChoices ? 2 : 3;
-      if (kept.minCount >= acceptableThreshold) {
-        this.logger.warn(
-          `[choice-validate][multi] ${kept.minCount}/4 valid choice ile devam (threshold=${acceptableThreshold})`,
-        );
-        if (grokResponse.localizedChoices && kept.localizedChoices) {
-          grokResponse.localizedChoices = kept.localizedChoices;
-        }
-        if (kept.choices) grokResponse.choices = kept.choices;
-      } else {
-        throw new BadRequestException(
-          `AI 3 deneme sonrası geçerli choice üretemedi (${kept.minCount}/4, threshold=${acceptableThreshold}).`,
-        );
-      }
+      throw new BadRequestException(
+        'AI olay özeti üretilemedi, lütfen tekrar deneyin.',
+      );
     }
 
-    // === DEBUG: response shape'ini gör ===
-    this.logger.warn(
-      `[dual-pov][debug] response keys: scenes=${!!grokResponse.scenes} ` +
-        `scene_keys=${grokResponse.scenes ? Object.keys(grokResponse.scenes).join(',') : 'none'} ` +
-        `currentScene=${!!grokResponse.currentScene} ` +
-        `choices_arr=${Array.isArray(grokResponse.choices)} ` +
-        `localizedChoices=${!!(grokResponse as any).localizedChoices} ` +
-        `active_player_confirmation=${(grokResponse as any).active_player_confirmation || 'none'}`,
+
+    // === CHOICE VALIDATION (orchestrator tek dilde, array format) ===
+    // Orchestrator'ın choices'ı array olarak döndüğü varsayılıyor. Eksik/boş ise
+    // keepValidMultiplayerChoices ile filtrele — threshold altındaysa retry yok,
+    // orchestrator bir kere retry zaten kendi içinde yapıyor.
+    const choicesArrRaw = Array.isArray(grokResponse.choices)
+      ? grokResponse.choices
+      : [];
+    const validChoices = choicesArrRaw.filter(
+      (c: any) => c && typeof c.text === 'string' && c.text.trim().length > 0,
+    );
+    if (validChoices.length < 2) {
+      this.logger.warn(
+        `[3call] orchestrator returned <2 valid choices (${validChoices.length}), aborting`,
+      );
+      throw new BadRequestException(
+        'AI geçerli seçenek üretemedi, lütfen tekrar deneyin.',
+      );
+    }
+    grokResponse.choices = validChoices;
+
+    this.logger.log(
+      `[3call] orchestrator OK — chronicle_len=${(grokResponse.currentScene || '').length} ` +
+        `choices=${validChoices.length} isEnding=${!!grokResponse.isEnding} ` +
+        `suggestTransition=${!!grokResponse.effects?.suggestChapterTransition}`,
     );
 
-    // === DUAL POV VALIDATION — scenes.host === scenes.guest ise guest delta retry ===
-    // Normalize + similarity ratio (whitespace/punctuation fark etmesin, %90+ benzerlik dahil)
-    if (grokResponse.scenes) {
-      const sc: any = grokResponse.scenes;
-      if (sc.host && sc.guest) {
-        const hostScene = String(sc.host).trim();
-        const guestScene = String(sc.guest).trim();
-        const activeNameForValidate =
-          userId === session.hostId?.toString()
-            ? session.hostName || 'Host'
-            : session.guestName || 'Guest';
+    const eventChronicle = grokResponse.currentScene || '';
+    const hostName = session.hostName || 'Host';
+    const guestName = session.guestName || 'Guest';
+    const hostLangOut = session.hostLanguageCode || 'en';
+    const guestLangOut = session.guestLanguageCode || 'en';
 
-        // Normalize: küçük harf, tek boşluk, noktalama trim
-        const normalize = (s: string): string =>
-          s
-            .toLowerCase()
-            .replace(/[\s\n\r]+/g, ' ')
-            .replace(/[.,!?;:'"\-—()]+/g, '')
-            .trim();
-        const nH = normalize(hostScene);
-        const nG = normalize(guestScene);
-        // Basit similarity: iki string'in ortak prefix uzunluğu / max uzunluk
-        const sharedPrefixLen = (() => {
-          const len = Math.min(nH.length, nG.length);
-          let i = 0;
-          while (i < len && nH[i] === nG[i]) i++;
-          return i;
-        })();
-        const maxLen = Math.max(nH.length, nG.length, 1);
-        const similarity = sharedPrefixLen / maxLen;
+    // ==========================================================================
+    // 3-CALL PIPELINE — Call 2 & 3: Parallel POV Rewrites (Promise.allSettled)
+    // ==========================================================================
+    // Attention entanglement'ı engellemek için her POV ayrı fetch'te üretilir.
+    // Biri fail ederse neutral chronicle fallback olarak kullanılır.
+    const [hostResult, guestResult] = await Promise.allSettled([
+      this.aiService.generatePovPerspective({
+        eventChronicle,
+        povName: hostName,
+        otherName: guestName,
+        languageCode: hostLangOut,
+      }),
+      this.aiService.generatePovPerspective({
+        eventChronicle,
+        povName: guestName,
+        otherName: hostName,
+        languageCode: guestLangOut,
+      }),
+    ]);
 
-        // Trigger: byte-eş VEYA prefix similarity > 0.7 (uzun benzer başlangıç)
-        const isIdentical = nH === nG;
-        const isTooSimilar = similarity > 0.7;
+    const hostScene =
+      hostResult.status === 'fulfilled' && hostResult.value && hostResult.value.trim().length >= 30
+        ? hostResult.value.trim()
+        : eventChronicle;
+    const guestScene =
+      guestResult.status === 'fulfilled' && guestResult.value && guestResult.value.trim().length >= 30
+        ? guestResult.value.trim()
+        : eventChronicle;
 
-        if (hostScene && (isIdentical || isTooSimilar)) {
-          this.logger.warn(
-            `[dual-pov] similar scenes detected (active=${activeNameForValidate}, identical=${isIdentical}, similarity=${similarity.toFixed(2)}), retrying with delta rewrite`,
-          );
-          try {
-            // Active oyuncu kim? Onun POV'unu base al, diğerini rewrite et.
-            const isHostActive = userId === session.hostId?.toString();
-            const sourcePov = isHostActive
-              ? { name: session.hostName || 'Host', scene: hostScene }
-              : { name: session.guestName || 'Guest', scene: guestScene };
-            const targetPov = isHostActive
-              ? { name: session.guestName || 'Guest' }
-              : { name: session.hostName || 'Host' };
-            const rewritten = await this.aiService.generatePovPerspective({
-              existingScene: sourcePov.scene,
-              existingPovName: sourcePov.name,
-              targetPovName: targetPov.name,
-              otherName: sourcePov.name,
-              languageCode: session.hostLanguageCode || 'en',
-            });
-            if (rewritten && rewritten !== sourcePov.scene) {
-              if (isHostActive) {
-                sc.guest = rewritten;
-              } else {
-                sc.host = rewritten;
-              }
-              this.logger.log(
-                `[dual-pov] delta rewrite succeeded for ${targetPov.name}'s POV (len=${rewritten.length})`,
-              );
-            } else {
-              this.logger.warn(
-                `[dual-pov] delta rewrite returned empty/same — keeping identical scenes (degraded)`,
-              );
-            }
-          } catch (err) {
-            this.logger.warn(
-              `[dual-pov] delta rewrite err: ${(err as Error).message}`,
-            );
-          }
-        }
-      }
+    const hostFallback = hostResult.status !== 'fulfilled' || hostScene === eventChronicle;
+    const guestFallback = guestResult.status !== 'fulfilled' || guestScene === eventChronicle;
+    if (hostFallback || guestFallback) {
+      this.logger.warn(
+        `[3call] pov fallback — host=${hostFallback} guest=${guestFallback}`,
+      );
     }
 
-    // Response normalize — dual perspective / bilingual / single
+    // ==========================================================================
+    // Response normalization — eventSummary canonical, scenes.host/guest populated
+    // ==========================================================================
+    const isDualPerspective = !isBilingual;
     let sceneText: string;
-    let choicesArr: any;
+    let choicesArr: any = validChoices;
     let scenes: Record<string, string> | undefined;
     let localizedChoices: Record<string, any> | undefined;
 
-    if (grokResponse.scenes) {
-      const sceneKeys = Object.keys(grokResponse.scenes);
-      const isDualPerspective =
-        sceneKeys.includes('host') && sceneKeys.includes('guest');
-
-      if (isDualPerspective) {
-        scenes = grokResponse.scenes;
-        choicesArr = grokResponse.choices || [];
-        sceneText = grokResponse.scenes.host || grokResponse.scenes.guest || '';
-      } else {
-        scenes = grokResponse.scenes;
-        const rawLC = grokResponse.localizedChoices || {};
-        localizedChoices = {};
-        for (const lang of Object.keys(rawLC)) {
-          localizedChoices[lang] = this.normalizeChoices(rawLC[lang]);
-        }
-        sceneText = grokResponse.scenes[languages[0]] || Object.values(grokResponse.scenes)[0] || '';
-        choicesArr = localizedChoices[languages[0]] || Object.values(localizedChoices)[0] || [];
-      }
+    if (isDualPerspective) {
+      // Same-language dual perspective: scenes.host + scenes.guest
+      scenes = { host: hostScene, guest: guestScene };
+      sceneText = hostScene;
     } else {
-      sceneText = grokResponse.currentScene || '';
-      choicesArr = grokResponse.choices || [];
+      // Bilingual: scenes[hostLang] + scenes[guestLang] (POV rewriter zaten dile göre üretti)
+      scenes = {
+        [hostLangOut]: hostScene,
+        [guestLangOut]: guestScene,
+      };
+      sceneText = scenes[hostLangOut] || hostScene;
+      // Bilingual'da choices tek dilde orchestrator'dan geldi — diğer dile translate
+      // gerekiyorsa ayrı helper (şimdilik her iki dile de aynı choices'ı verelim;
+      // gerçek çeviri gelecek iterasyonda)
+      localizedChoices = {
+        [hostLangOut]: validChoices,
+        [guestLangOut]: validChoices,
+      };
     }
 
     // Create progress
@@ -641,6 +592,8 @@ export class MultiplayerService {
       effects: grokResponse.effects,
       isEnding: grokResponse.isEnding || false,
       endingType: grokResponse.endingType,
+      eventSummary: eventChronicle,
+      suggestChapterTransition: !!grokResponse.effects?.suggestChapterTransition,
     });
 
     // Swap turns
@@ -706,6 +659,10 @@ export class MultiplayerService {
       const scenesToSummarize = orderedAsc
         .slice(0, orderedAsc.length - 2)
         .map((p: any) => {
+          // 3-call pipeline: eventSummary neutral chronicle öncelikli
+          if (p.eventSummary && typeof p.eventSummary === 'string') {
+            return p.eventSummary;
+          }
           const sc = p.scenes;
           if (sc?.host && sc?.guest) {
             return `[HOST POV] ${sc.host}\n[GUEST POV] ${sc.guest}`;

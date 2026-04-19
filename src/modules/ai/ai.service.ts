@@ -271,71 +271,231 @@ export class AiService {
   }
 
   /**
-   * Dual perspective delta retry — host sahnesi tamam ama guest sahnesi
-   * aynı çıktıysa, guest POV'u tek başına yeniden üret. Çok daha ucuz
-   * (tek sahne, 500 token çıktı) ve izole edilmiş tek perspective.
+   * 3-Call Pipeline — Call 1: Event Orchestrator.
+   * Tarafsız 3. şahıs vakanüvis: oyuncunun seçimi sonucu yaşanan olayı
+   * "Erman yaklaştı, Esra gülümsedi" formatında anlatır. POV yok, "sen" yok.
+   * Çıktıda choices, effects, isEnding, suggestChapterTransition JSON field'ları bulunur.
+   * Bu chronicle sonraki iki paralel POV rewrite call'ının canonical input'udur.
+   */
+  async generateEventOrchestrator(params: {
+    storyContext: string;
+    choiceText: string;
+    activePlayerName: string;
+    hostName: string;
+    guestName: string;
+    languageCode: string;
+    pacingHint?: string;
+    isLastChapter?: boolean;
+  }): Promise<GrokResponse> {
+    const langInstruction = this.buildSummaryLanguageInstruction(params.languageCode);
+    const systemPrompt =
+      `${params.storyContext}\n\n` +
+      `====================\n` +
+      `MODE: NEUTRAL EVENT CHRONICLER (3-call pipeline, Step 1 of 3)\n` +
+      `====================\n` +
+      `You are a NEUTRAL CHRONICLER. Your ONLY job is to describe WHAT HAPPENED as a result of ` +
+      `${params.activePlayerName}'s choice. The final first-person scenes for each player will be ` +
+      `written by separate POV rewriters in subsequent calls — NOT by you.\n\n` +
+      `HARD RULES:\n` +
+      `- Write in 3rd PERSON OBJECTIVE NARRATOR voice.\n` +
+      `- NEVER use "sen" / "you" / "I" / "ben".\n` +
+      `- ALWAYS use character names: ${params.hostName}, ${params.guestName}.\n` +
+      `- Describe external events, dialogue, and observable emotions — NOT internal thoughts.\n` +
+      `- 3-5 sentences. Same factual content any POV rewriter could use.\n` +
+      `- ${langInstruction}\n\n` +
+      `OUTPUT JSON SCHEMA:\n` +
+      `{\n` +
+      `  "eventChronicle": "string (3-5 sentences, 3rd person objective, ${params.languageCode})",\n` +
+      `  "choices": [ { "id": "1", "text": "..." }, { "id": "2", "text": "..." }, ... ],\n` +
+      `  "effects": { "emotionalChanges": {...}, "itemsGained": [...], "itemsLost": [...], "suggestChapterTransition": boolean },\n` +
+      `  "isEnding": boolean,\n` +
+      `  "endingType": "string | null"\n` +
+      `}\n\n` +
+      `Choices must be written in the same language as eventChronicle (${params.languageCode}).`;
+
+    const userMessage =
+      `ACTIVE PLAYER: ${params.activePlayerName}\n` +
+      `CHOICE MADE: "${params.choiceText}"\n\n` +
+      `Describe the immediate consequence of this choice as a neutral chronicler. ` +
+      `Then propose 3-4 choices for the NEXT turn.\n\n` +
+      `REMINDERS:\n` +
+      `- 3rd person objective, no "sen"/"you"/"I".\n` +
+      `- Use names: ${params.hostName}, ${params.guestName}.\n` +
+      `- Facts only; leave internal POV to the rewriters.\n` +
+      (params.pacingHint ? `- Pacing: ${params.pacingHint}\n` : '') +
+      (params.isLastChapter ? `- This is the LAST chapter; pace toward an ending.\n` : '');
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const maxTokens = 1400 + attempt * 600;
+      try {
+        const response = await fetch(this.apiUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: this.model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userMessage },
+            ],
+            temperature: 0.7,
+            max_tokens: maxTokens,
+            response_format: { type: 'json_object' },
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`EventOrchestrator ${response.status}: ${errorText}`);
+        }
+
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (!content) throw new Error('Empty orchestrator response');
+
+        const parsed = JSON.parse(content);
+        if (!parsed.eventChronicle || typeof parsed.eventChronicle !== 'string') {
+          throw new Error('Missing eventChronicle field');
+        }
+        if (!Array.isArray(parsed.choices) || parsed.choices.length === 0) {
+          throw new Error('Missing/empty choices array');
+        }
+
+        // Normalize effects.suggestChapterTransition → root (multiplayer.service bekliyor)
+        const suggestTransition =
+          parsed.suggestChapterTransition ??
+          parsed.effects?.suggestChapterTransition ??
+          false;
+
+        this.logger.log(
+          `[orchestrator] success attempt=${attempt + 1} chronicle_len=${parsed.eventChronicle.length} choices=${parsed.choices.length}`,
+        );
+
+        return {
+          currentScene: parsed.eventChronicle,
+          choices: parsed.choices,
+          effects: {
+            ...(parsed.effects || {}),
+            suggestChapterTransition: suggestTransition,
+          },
+          isEnding: !!parsed.isEnding,
+          endingType: parsed.endingType || undefined,
+        } as GrokResponse;
+      } catch (err) {
+        this.logger.warn(
+          `[orchestrator] attempt ${attempt + 1}/3 failed: ${(err as Error).message}`,
+        );
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+    throw new Error('EventOrchestrator failed after 3 attempts');
+  }
+
+  /**
+   * 3-Call Pipeline — Call 2/3: POV Rewriter.
+   * Event Orchestrator'ın ürettiği tarafsız chronicle'ı, istenen karakterin
+   * 1. şahıs perspektifine yeniden yazar. Call 2 ve Call 3 paralel (Promise.allSettled)
+   * çağrılır — böylece attention entanglement problemi mimari olarak aşılır.
    *
-   * Kullanım: validateMultiplayerChoices sonrası scenes.host === scenes.guest
-   * durumunda submitChoice içinden çağrılır.
+   * Eski delta retry API'si ile geriye uyumlu: existingScene + existingPovName + targetPovName
+   * parametreleriyle de çalışır.
    */
   async generatePovPerspective(params: {
-    existingScene: string;
-    existingPovName: string; // mevcut sahnenin POV'u (ör. "Erman")
-    targetPovName: string;   // istenen POV (ör. "Esra")
-    otherName: string;       // diğer kişinin adı (mevcut POV'da 3. şahıs olacak)
+    eventChronicle?: string;       // Yeni pipeline (tercih edilen)
+    povName?: string;               // Yeni pipeline: yazılacak POV
+    otherName?: string;             // Yeni pipeline: 3. şahıs kalan isim
+    // Legacy delta retry API
+    existingScene?: string;
+    existingPovName?: string;
+    targetPovName?: string;
     languageCode?: string;
   }): Promise<string> {
-    const langInstruction = this.buildSummaryLanguageInstruction(params.languageCode);
+    // Parametre normalizasyonu — yeni API mi legacy mi?
+    const sourceScene = params.eventChronicle || params.existingScene || '';
+    const targetPov = params.povName || params.targetPovName || '';
+    const otherName = params.otherName ||
+      (params.existingPovName && params.existingPovName !== targetPov
+        ? params.existingPovName
+        : '');
+    const sourceLabel = params.eventChronicle
+      ? 'neutral event chronicle'
+      : `scene from ${params.existingPovName || 'another POV'}`;
 
-    const userContent =
-      `The following scene describes an event from ${params.existingPovName}'s POV:\n` +
-      `"""\n${params.existingScene}\n"""\n\n` +
-      `Rewrite this SAME EVENT from ${params.targetPovName}'s POV.\n` +
-      `Rules:\n` +
-      `- "sen" (second person) = ${params.targetPovName} (NOT ${params.existingPovName})\n` +
-      `- ${params.existingPovName} is 3rd person in your output\n` +
-      `- Same facts, decisions, dialogue — different INTERNAL experience\n` +
-      `- Add ${params.targetPovName}'s sensory/emotional perception\n` +
-      `- 3-5 sentences, plain text, no JSON, no quotes around output\n` +
-      `${langInstruction}`;
-
-    try {
-      const response = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            {
-              role: 'system',
-              content: `You are a POV rewriter. Take a scene and rewrite it from another character's perspective. Keep all events factual, only change internal perception and pronouns. ${langInstruction}`,
-            },
-            { role: 'user', content: userContent },
-          ],
-          temperature: 0.5,
-          max_tokens: 500,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        this.logger.warn(
-          `generatePovPerspective failed (${response.status}): ${errorText}`,
-        );
-        return '';
-      }
-
-      const data = await response.json();
-      return (data.choices?.[0]?.message?.content?.trim() || '') as string;
-    } catch (err) {
+    if (!sourceScene || !targetPov) {
       this.logger.warn(
-        `generatePovPerspective error: ${(err as Error).message}`,
+        `[pov-rewriter] missing params — sourceScene=${!!sourceScene} targetPov=${targetPov}`,
       );
       return '';
     }
+    const langInstruction = this.buildSummaryLanguageInstruction(params.languageCode);
+
+    const otherRule = otherName
+      ? `- ${otherName} is 3rd person, addressed by name.\n`
+      : `- All other characters remain 3rd person.\n`;
+
+    const userContent =
+      `Source (${sourceLabel}):\n"""\n${sourceScene}\n"""\n\n` +
+      `Rewrite this SAME EVENT from ${targetPov}'s FIRST-PERSON perspective.\n` +
+      `Rules:\n` +
+      `- "sen" / "you" = ${targetPov}\n` +
+      otherRule +
+      `- Same facts, decisions, dialogue — different INTERNAL experience.\n` +
+      `- Add ${targetPov}'s sensory / emotional perception.\n` +
+      `- 3-5 sentences, plain text, no JSON, no quotes around output.\n` +
+      `${langInstruction}`;
+
+    // Retry: empty / too-short output → 1 retry
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch(this.apiUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: this.model,
+            messages: [
+              {
+                role: 'system',
+                content:
+                  `You are a POV rewriter. Take a scene and rewrite it from the specified character's first-person perspective. ` +
+                  `Keep all events factual, only change internal perception and pronouns. Output plain text only. ${langInstruction}`,
+              },
+              { role: 'user', content: userContent },
+            ],
+            temperature: 0.55,
+            max_tokens: 800,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          this.logger.warn(
+            `generatePovPerspective failed (${response.status}): ${errorText}`,
+          );
+          if (attempt === 0) continue;
+          return '';
+        }
+
+        const data = await response.json();
+        const text = (data.choices?.[0]?.message?.content?.trim() || '') as string;
+        if (text.length < 30 && attempt === 0) {
+          this.logger.warn(`[pov-rewriter] too-short output (${text.length}), retrying`);
+          continue;
+        }
+        return text;
+      } catch (err) {
+        this.logger.warn(
+          `generatePovPerspective error: ${(err as Error).message}`,
+        );
+        if (attempt === 0) continue;
+        return '';
+      }
+    }
+    return '';
   }
 
   /**
