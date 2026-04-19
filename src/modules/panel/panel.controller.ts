@@ -284,6 +284,17 @@ export class PanelController {
     };
   }
 
+  @Get('stories')
+  @Render('panel/stories/list')
+  showStories(@Req() req: Request & { session: PanelSession }) {
+    return {
+      title: 'Hikayeler',
+      currentPath: req.path,
+      username: req.session?.username || 'Admin',
+      breadcrumbs: [{ label: 'Hikayeler' }],
+    };
+  }
+
   @Get('notifications')
   @Render('panel/notifications/composer')
   showNotifications(@Req() req: Request & { session: PanelSession }) {

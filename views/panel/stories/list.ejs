@@ -1,0 +1,60 @@
+<% layout('panel/layout') %>
+
+<div class="flex flex-col gap-5">
+  <div class="kt-card">
+    <div class="kt-card-content p-5">
+      <div class="flex flex-wrap items-center gap-3">
+        <input id="search-input" type="search" class="kt-input max-w-xs" placeholder="Başlık, tag ara..."/>
+        <select id="genre-filter" class="kt-input">
+          <option value="">Tüm türler</option>
+        </select>
+        <select id="paid-filter" class="kt-input">
+          <option value="">Tüm tipler</option>
+          <option value="true">Ücretli</option>
+          <option value="false">Ücretsiz</option>
+        </select>
+        <select id="published-filter" class="kt-input">
+          <option value="">Tüm durum</option>
+          <option value="true">Yayınlı</option>
+          <option value="false">Taslak</option>
+        </select>
+        <button id="clear-filters" class="kt-btn kt-btn-outline">Temizle</button>
+        <div class="flex-1"></div>
+        <a href="/panel/stories/new" class="kt-btn kt-btn-primary">
+          <i class="ki-filled ki-plus me-1"></i> Yeni Hikaye
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="kt-card">
+    <div class="kt-card-content p-0">
+      <table class="kt-table w-full">
+        <thead>
+          <tr>
+            <th>Kapak</th>
+            <th>Başlık</th>
+            <th>Tür</th>
+            <th>Tip</th>
+            <th>Durum</th>
+            <th>Okunma</th>
+            <th>Güncelleme</th>
+            <th class="text-end">Aksiyon</th>
+          </tr>
+        </thead>
+        <tbody id="stories-tbody">
+          <tr><td colspan="8" class="p-8 text-center">Yükleniyor...</td></tr>
+        </tbody>
+      </table>
+      <div class="flex items-center justify-between p-4 border-t border-border">
+        <span id="stories-total" class="text-sm text-secondary-foreground">—</span>
+        <div class="flex gap-2">
+          <button id="stories-prev" class="kt-btn kt-btn-sm kt-btn-outline">Önceki</button>
+          <button id="stories-next" class="kt-btn kt-btn-sm kt-btn-outline">Sonraki</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/panel-assets/js/stories-list.js"></script>
