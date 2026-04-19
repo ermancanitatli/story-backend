@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { RevenueCatEvent } from './schemas/revenuecat-event.schema';
 import { UsersService } from '../users/users.service';
 import { CreditsService } from '../credits/credits.service';
+import { NotificationService } from '../notifications/notification.service';
 
 const CREDIT_PRODUCTS: Record<string, number> = {
   'com.xting.credit.250': 250,
@@ -14,8 +15,8 @@ const CREDIT_PRODUCTS: Record<string, number> = {
   'com.xting.credit.12500': 12500,
 };
 
-const SUBSCRIPTION_ACTIVE_EVENTS = ['INITIAL_PURCHASE', 'RENEWAL', 'PRODUCT_CHANGE', 'TRIAL_STARTED', 'TRIAL_CONVERTED'];
-const SUBSCRIPTION_CANCEL_EVENTS = ['CANCELLATION', 'UNCANCELLATION', 'EXPIRATION', 'BILLING_ISSUE'];
+const SUBSCRIPTION_ACTIVE_EVENTS = ['INITIAL_PURCHASE', 'RENEWAL', 'PRODUCT_CHANGE', 'NON_RENEWING_PURCHASE', 'TRIAL_STARTED', 'TRIAL_CONVERTED'];
+const SUBSCRIPTION_CANCEL_EVENTS = ['CANCELLATION', 'EXPIRATION', 'BILLING_ISSUE'];
 
 @Injectable()
 export class BillingService {
@@ -25,6 +26,7 @@ export class BillingService {
     @InjectModel(RevenueCatEvent.name) private eventModel: Model<RevenueCatEvent>,
     private usersService: UsersService,
     private creditsService: CreditsService,
+    private notificationService: NotificationService,
   ) {}
 
   async processWebhook(body: any): Promise<{ success: boolean }> {
@@ -69,11 +71,15 @@ export class BillingService {
           premium: { isPremium: true, plan, provider: 'revenuecat', expiresAt } as any,
         } as any);
         this.logger.log(`Premium activated: ${userId} (${plan})`);
+        // OneSignal premium tag sync — fire-and-forget, webhook response'unu etkilemesin
+        this.notificationService.updateUserTags(userId, { premium: 'true' }).catch(() => {});
       } else if (SUBSCRIPTION_CANCEL_EVENTS.includes(eventType)) {
         await this.usersService.update(userId, {
           premium: { isPremium: false } as any,
         } as any);
         this.logger.log(`Premium cancelled: ${userId}`);
+        // OneSignal premium tag sync — fire-and-forget
+        this.notificationService.updateUserTags(userId, { premium: 'false' }).catch(() => {});
       }
     }
 

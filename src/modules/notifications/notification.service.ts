@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { BroadcastNotificationDto } from './dto/broadcast-notification.dto';
@@ -8,7 +8,7 @@ const ONESIGNAL_MAX_EXTERNAL_IDS_PER_REQUEST = 2000;
 const ONESIGNAL_NOTIFICATIONS_URL = 'https://onesignal.com/api/v1/notifications';
 
 @Injectable()
-export class NotificationService {
+export class NotificationService implements OnModuleInit {
   private readonly logger = new Logger(NotificationService.name);
   private readonly appId: string | null = null;
   private readonly apiKey: string | null = null;
@@ -23,9 +23,14 @@ export class NotificationService {
     if (appId && apiKey) {
       this.appId = appId;
       this.apiKey = apiKey;
-      this.logger.log('OneSignal client initialized');
+    }
+  }
+
+  onModuleInit(): void {
+    if (this.appId && this.apiKey) {
+      this.logger.log(`🔔 OneSignal initialized (appId=${this.appId.slice(0, 8)}...)`);
     } else {
-      this.logger.warn('OneSignal credentials not configured — push notifications disabled');
+      this.logger.warn('🔕 OneSignal credentials missing — notifications will fail');
     }
   }
 
@@ -162,6 +167,38 @@ export class NotificationService {
       recipients: aggregatedRecipients,
       errors: firstErrors,
     };
+  }
+
+  /**
+   * OneSignal user tag update via external_id alias.
+   * Fire-and-forget pattern: başarısızlık sessizce loglanır, throw etmez.
+   */
+  async updateUserTags(userId: string, tags: Record<string, string>): Promise<void> {
+    if (!this.appId || !this.apiKey) {
+      this.logger.warn('OneSignal credentials missing, skipping tag update');
+      return;
+    }
+    try {
+      const res = await fetch(
+        `https://onesignal.com/api/v1/apps/${this.appId}/users/by/external_id/${encodeURIComponent(userId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Basic ${this.apiKey}`,
+          },
+          body: JSON.stringify({ tags }),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.text();
+        this.logger.warn(`OneSignal tag update failed ${res.status}: ${body}`);
+        return;
+      }
+      this.logger.debug(`OneSignal tags updated for ${userId}: ${JSON.stringify(tags)}`);
+    } catch (err) {
+      this.logger.warn(`OneSignal tag update exception: ${(err as Error).message}`);
+    }
   }
 
   private async postNotification(body: Record<string, any>): Promise<OneSignalBroadcastResponse> {
