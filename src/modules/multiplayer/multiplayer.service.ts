@@ -139,15 +139,24 @@ export class MultiplayerService {
       baseMaxTokens: 8000,
     });
 
-    // DUAL POV VALIDATION (initial scene) — scenes.host === scenes.guest ise delta retry
+    // DUAL POV VALIDATION (initial scene) — normalize + similarity
     if (grokResponse.scenes) {
       const sc: any = grokResponse.scenes;
       if (sc.host && sc.guest) {
         const h = String(sc.host).trim();
         const g = String(sc.guest).trim();
-        if (h && h === g) {
+        const nH = h.toLowerCase().replace(/[\s\n\r]+/g, ' ').replace(/[.,!?;:'"\-—()]+/g, '').trim();
+        const nG = g.toLowerCase().replace(/[\s\n\r]+/g, ' ').replace(/[.,!?;:'"\-—()]+/g, '').trim();
+        const sharedPrefixLen = (() => {
+          const len = Math.min(nH.length, nG.length);
+          let i = 0;
+          while (i < len && nH[i] === nG[i]) i++;
+          return i;
+        })();
+        const similarity = sharedPrefixLen / Math.max(nH.length, nG.length, 1);
+        if (h && (nH === nG || similarity > 0.7)) {
           this.logger.warn(
-            `[dual-pov][initial] identical scenes, guest delta retry`,
+            `[dual-pov][initial] similar scenes (identical=${nH === nG}, similarity=${similarity.toFixed(2)}), delta retry`,
           );
           try {
             const rewritten = await this.aiService.generatePovPerspective({
@@ -511,8 +520,7 @@ export class MultiplayerService {
     );
 
     // === DUAL POV VALIDATION — scenes.host === scenes.guest ise guest delta retry ===
-    // Same-lang dual perspective mode: scenes.host ve scenes.guest byte-eş olmamalı.
-    // Eş ise guest POV'u tek başına ucuz bir LLM çağrısıyla yeniden üret.
+    // Normalize + similarity ratio (whitespace/punctuation fark etmesin, %90+ benzerlik dahil)
     if (grokResponse.scenes) {
       const sc: any = grokResponse.scenes;
       if (sc.host && sc.guest) {
@@ -522,9 +530,33 @@ export class MultiplayerService {
           userId === session.hostId?.toString()
             ? session.hostName || 'Host'
             : session.guestName || 'Guest';
-        if (hostScene && hostScene === guestScene) {
+
+        // Normalize: küçük harf, tek boşluk, noktalama trim
+        const normalize = (s: string): string =>
+          s
+            .toLowerCase()
+            .replace(/[\s\n\r]+/g, ' ')
+            .replace(/[.,!?;:'"\-—()]+/g, '')
+            .trim();
+        const nH = normalize(hostScene);
+        const nG = normalize(guestScene);
+        // Basit similarity: iki string'in ortak prefix uzunluğu / max uzunluk
+        const sharedPrefixLen = (() => {
+          const len = Math.min(nH.length, nG.length);
+          let i = 0;
+          while (i < len && nH[i] === nG[i]) i++;
+          return i;
+        })();
+        const maxLen = Math.max(nH.length, nG.length, 1);
+        const similarity = sharedPrefixLen / maxLen;
+
+        // Trigger: byte-eş VEYA prefix similarity > 0.7 (uzun benzer başlangıç)
+        const isIdentical = nH === nG;
+        const isTooSimilar = similarity > 0.7;
+
+        if (hostScene && (isIdentical || isTooSimilar)) {
           this.logger.warn(
-            `[dual-pov] identical scenes detected (active=${activeNameForValidate}), retrying with guest-only delta rewrite`,
+            `[dual-pov] similar scenes detected (active=${activeNameForValidate}, identical=${isIdentical}, similarity=${similarity.toFixed(2)}), retrying with delta rewrite`,
           );
           try {
             // Active oyuncu kim? Onun POV'unu base al, diğerini rewrite et.
