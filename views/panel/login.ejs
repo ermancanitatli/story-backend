@@ -33,16 +33,8 @@
       document.documentElement.classList.add(themeMode);
     }
   </script>
-  <style>
-    .page-bg {
-      background-image: url('/panel-assets/media/images/2600x1600/1.png');
-    }
-    .dark .page-bg {
-      background-image: url('/panel-assets/media/images/2600x1600/1-dark.png');
-    }
-  </style>
-  <div class="flex items-center justify-center grow bg-center bg-no-repeat page-bg">
-    <div class="kt-card max-w-[370px] w-full">
+  <div class="flex items-center justify-center grow bg-muted/30">
+    <div class="kt-card max-w-[370px] w-full shadow-sm">
       <form class="kt-card-content flex flex-col gap-5 p-10" method="post" action="/panel/login" id="sign_in_form">
         <div class="text-center mb-2.5">
           <h3 class="text-lg font-medium text-mono leading-none mb-2.5">
