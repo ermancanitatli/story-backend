@@ -127,4 +127,83 @@
 
   setTimeout(() => { if (window.__story) applyStoryToSettings(); }, 500);
   setTimeout(() => { if (window.__story) applyStoryToSettings(); }, 1500);
+
+  // ===== Basic tab (STORY-11): multi-locale title/summary + metadata =====
+  const LOCALES = ['en','tr','ar','de','es','fr','it','ja','ko','pt','ru','zh'];
+  let currentLocale = 'en';
+
+  function renderBadges(story) {
+    const el = document.getElementById('locale-badges');
+    if (!el) return;
+    el.innerHTML = LOCALES.map(l => {
+      const filled = !!(story?.translations?.[l]?.title);
+      return `<span class="kt-badge ${filled ? 'kt-badge-success' : 'kt-badge-outline'}">${l.toUpperCase()}${filled ? ' ✓' : ''}</span>`;
+    }).join('');
+  }
+
+  function loadLocale(locale) {
+    currentLocale = locale;
+    const t = window.__story?.translations?.[locale] || {};
+    document.getElementById('f-title').value = t.title || (locale === 'en' ? window.__story?.title : '') || '';
+    document.getElementById('f-summary').value = t.summary || (locale === 'en' ? window.__story?.summary : '') || '';
+    document.getElementById('f-summary-safe').value = t.summarySafe || (locale === 'en' ? window.__story?.summarySafe : '') || '';
+    document.querySelectorAll('.locale-label').forEach(el => el.textContent = locale.toUpperCase());
+  }
+
+  function captureLocale() {
+    if (!window.__story) return;
+    window.__story.translations = window.__story.translations || {};
+    window.__story.translations[currentLocale] = {
+      title: document.getElementById('f-title').value,
+      summary: document.getElementById('f-summary').value,
+      summarySafe: document.getElementById('f-summary-safe').value,
+    };
+    // EN değişince flat title/summary de güncelle (backend compat)
+    if (currentLocale === 'en') {
+      window.__story.title = document.getElementById('f-title').value;
+      window.__story.summary = document.getElementById('f-summary').value;
+      window.__story.summarySafe = document.getElementById('f-summary-safe').value;
+    }
+  }
+
+  document.getElementById('locale-select')?.addEventListener('change', e => {
+    captureLocale();
+    loadLocale(e.target.value);
+    renderBadges(window.__story);
+  });
+
+  ['f-title','f-summary','f-summary-safe'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', () => {
+      captureLocale();
+      renderBadges(window.__story);
+    });
+  });
+
+  ['f-genre','f-difficulty','f-age','f-credit-cost','f-is-paid','f-is-published'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const handler = () => {
+      if (!window.__story) return;
+      const val = el.type === 'checkbox' ? el.checked : el.value;
+      const key = { 'f-genre': 'genre', 'f-difficulty': 'difficulty', 'f-age': 'ageRating', 'f-credit-cost': 'creditCost', 'f-is-paid': 'isPaid', 'f-is-published': 'isPublished' }[id];
+      window.__story[key] = id === 'f-credit-cost' ? parseFloat(val) || 0 : val;
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+  });
+
+  function applyStoryToBasicTab() {
+    if (!window.__story) return;
+    document.getElementById('f-genre').value = window.__story.genre || '';
+    document.getElementById('f-difficulty').value = window.__story.difficulty || '';
+    document.getElementById('f-age').value = window.__story.ageRating || '';
+    document.getElementById('f-credit-cost').value = window.__story.creditCost ?? 0;
+    document.getElementById('f-is-paid').checked = !!window.__story.isPaid;
+    document.getElementById('f-is-published').checked = !!window.__story.isPublished;
+    loadLocale('en');
+    renderBadges(window.__story);
+  }
+
+  setTimeout(() => { if (window.__story) applyStoryToBasicTab(); }, 500);
+  setTimeout(() => { if (window.__story) applyStoryToBasicTab(); }, 1500);
 })();
