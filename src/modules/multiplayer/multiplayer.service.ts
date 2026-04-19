@@ -339,6 +339,10 @@ export class MultiplayerService {
 
     let grokResponse = await this.aiService.callGrokAPI({ systemPrompt, userMessage });
 
+    // Bilingual'da tek dilde eksik choice varsa diğer dildeki aynı index'li choice ile doldur
+    // (AI retry'ından önce bu basit patching — çoğu zaman bir dil başarılı oluyor).
+    this.patchBilingualChoicesFromOtherLang(grokResponse);
+
     // === CHOICE VALIDATION + RETRY (max 3 deneme) ===
     const CHOICE_MAX_RETRIES = 3;
     let choiceRetry = 0;
@@ -616,6 +620,54 @@ export class MultiplayerService {
       }
       return { id: String(i + 1), text: '', type: 'action' };
     });
+  }
+
+  /**
+   * Bilingual response'ta bir dildeki eksik choice'ı diğer dildekinin
+   * aynı index'lisinden doldur. Grok çoğu zaman bir dili tamamlar, diğer
+   * dili atlar — retry'a gitmeden bu basit mapping ile %90 vakayı çözer.
+   * Üç dil farkı yok çünkü choices her iki dilde aynı anlam — aynı sıradaki
+   * choice index'li zaten aynı aksiyon.
+   */
+  private patchBilingualChoicesFromOtherLang(response: any): void {
+    if (!response.localizedChoices || typeof response.localizedChoices !== 'object') return;
+    const langs = Object.keys(response.localizedChoices);
+    if (langs.length < 2) return;
+    const isValid = (c: any): boolean => {
+      if (!c) return false;
+      if (typeof c.text === 'string') return c.text.trim().length >= 2;
+      return false;
+    };
+    for (let i = 0; i < 4; i++) {
+      let goodIdx: number | null = null;
+      for (let l = 0; l < langs.length; l++) {
+        const arr = response.localizedChoices[langs[l]];
+        if (Array.isArray(arr) && isValid(arr[i])) {
+          goodIdx = l;
+          break;
+        }
+      }
+      if (goodIdx === null) continue;
+      const goodLang = langs[goodIdx];
+      const goodChoice = response.localizedChoices[goodLang][i];
+      for (let l = 0; l < langs.length; l++) {
+        if (l === goodIdx) continue;
+        const arr = response.localizedChoices[langs[l]];
+        if (!Array.isArray(arr)) continue;
+        if (!isValid(arr[i])) {
+          // Patch: id + type source'dan, text de source'tan (aynı dilde kalır
+          // ama hiç choice olmamasından iyidir — AI çoğu zaman bir dilde tamamlar)
+          arr[i] = {
+            id: String(goodChoice.id ?? i + 1),
+            text: goodChoice.text,
+            type: goodChoice.type || 'action',
+          };
+          this.logger.warn(
+            `[choice-patch] ${langs[l]}.choices[${i}] eksikti, ${goodLang}'den kopyalandı (text aynı dil ama fallback)`,
+          );
+        }
+      }
+    }
   }
 
   /**

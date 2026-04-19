@@ -898,25 +898,26 @@ async function runMultiplayer() {
       logLine(`  [${pick.c.id || pick.idx + 1}] (${pick.c.type || '?'}) "${pick.text}"`);
       logLine('');
 
-      // 2. Yeni sahne — İKİ TARAF da ayrı dil görüyor
+      // 2. Yeni sahne — HER İKİ taraf da kendi perspective'inde ne görüyor
       logLine(`◆ ${activePlayer.name}'nın (${activePlayer.language}) gördüğü sahne:`);
       logLine(`  ${result?.currentScene || '(boş)'}`);
       logLine('');
 
-      // Karşı oyuncunun dilinde de aynı sahneyi çek (bilingual için)
-      if (host.language !== guest.language) {
-        try {
-          const otherProgress: any = await call(
-            'GET',
-            `/api/multiplayer/${sessionId}/progress`,
-            undefined,
-            otherPlayer.headers,
-          );
-          logLine(`◆ ${otherPlayer.name}'nın (${otherPlayer.language}) gördüğü sahne:`);
-          logLine(`  ${otherProgress?.currentScene || '(boş)'}`);
-          logLine('');
-        } catch {}
-      }
+      // Karşı oyuncunun gördüğü sahneyi her durumda çek — dil aynı olsa bile
+      // bilingual MODE aktifken perspective farklı olmalı (Erman=you vs Esra=you).
+      try {
+        const otherProgress: any = await call(
+          'GET',
+          `/api/multiplayer/${sessionId}/progress`,
+          undefined,
+          otherPlayer.headers,
+        );
+        const otherScene = otherProgress?.currentScene || '(boş)';
+        const sameScene = otherScene === result?.currentScene;
+        logLine(`◆ ${otherPlayer.name}'nın (${otherPlayer.language}) gördüğü sahne:${sameScene ? ' [⚠ AYNI METİN — perspective değişmemiş!]' : ''}`);
+        logLine(`  ${otherScene}`);
+        logLine('');
+      } catch {}
 
       // 3. Sonraki oyuncunun önündeki choice'lar
       //    Backend turn swap yaptı → bir sonraki aktif oyuncu choice'ları görecek
