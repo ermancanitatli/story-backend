@@ -24,6 +24,7 @@ export class StoryEffects {
   @Prop({ type: [String], default: [] }) itemsLost: string[];
   @Prop({ type: Object }) relationshipChanges: Record<string, string>;
   @Prop({ type: EmotionalChanges }) emotionalChanges: EmotionalChanges;
+  @Prop({ default: false }) suggestChapterTransition: boolean;
 }
 
 @Schema({ timestamps: true, collection: 'story_progress' })
