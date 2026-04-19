@@ -282,6 +282,7 @@
 
         return `
           <div class="media-card group relative aspect-square rounded-lg border border-border overflow-hidden cursor-pointer hover:ring-2 ring-primary transition ${hidden ? 'opacity-50' : ''}"
+               style="max-height:600px;"
                data-item-id="${esc(m._id || '')}" draggable="true">
             ${inner}
             ${hiddenBadge}
@@ -572,8 +573,8 @@
 
     const isVid = isVideoItem(item);
     modalPreview.innerHTML = isVid
-      ? `<video src="${esc(item.url)}" controls style="max-height:400px;width:auto;max-width:100%;" class="rounded bg-black"></video>`
-      : `<img src="${esc(item.url)}" alt="" style="max-height:400px;width:auto;max-width:100%;" class="object-contain rounded"/>`;
+      ? `<video src="${esc(item.url)}" controls style="max-height:600px;width:auto;max-width:100%;" class="rounded bg-black"></video>`
+      : `<img src="${esc(item.url)}" alt="" style="max-height:600px;width:auto;max-width:100%;" class="object-contain rounded"/>`;
     modalUrl.value = item.url || '';
     modalTitleInput.value = item.title || '';
     modalAlt.value = item.alt || '';
