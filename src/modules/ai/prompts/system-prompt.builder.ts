@@ -292,32 +292,76 @@ Develop the story freely. MANDATORY: effects.suggestChapterTransition = false.`;
   }
 
   if (params.isMultiplayer) {
-    const activeName = params.activePlayerName || params.hostName || 'Host';
-    const otherName =
-      activeName === params.hostName ? params.guestName || 'Guest' : params.hostName || 'Host';
-    prompt += `
+    const hostN = params.hostName || 'Host';
+    const guestN = params.guestName || 'Guest';
+    const activeName = params.activePlayerName || hostN;
+    const otherName = activeName === hostN ? guestN : hostN;
+
+    if (isBilingual) {
+      // BILINGUAL: her dil ayrı bir oyuncunun perspective'i
+      // languages[0] = host language → host'un gözünden (host="you")
+      // languages[1] = guest language → guest'in gözünden (guest="you")
+      const l0 = languages[0];
+      const l1 = languages[1];
+      prompt += `
+
+## Multiplayer Mode — BILINGUAL DUAL PERSPECTIVE (CRITICAL):
+- Host (player 1): ${hostN} — speaks ${getLanguageName(l0)} (${l0})
+- Guest (player 2): ${guestN} — speaks ${getLanguageName(l1)} (${l1})
+- **ACTIVE PLAYER this turn: ${activeName}** — their choice drives what happens in the scene.
+- Both are REAL players who REPLACE the story's original characters. NEVER use original names — only "${hostN}" and "${guestN}".
+
+### CRITICAL: "scenes" field must contain TWO DIFFERENT perspectives of the SAME event.
+
+- \`scenes.${l0}\` → written in ${getLanguageName(l0)} from **${hostN}'s** point of view ("you" = ${hostN}, ${guestN} = third person).
+- \`scenes.${l1}\` → written in ${getLanguageName(l1)} from **${guestN}'s** point of view ("you" = ${guestN}, ${hostN} = third person).
+
+They describe the SAME moment, but through each player's own eyes. NOT a translation of the same sentence.
+
+Example — if ${activeName} just chose to say "Focus on your breath" to the other:
+
+  scenes.${l0} (${hostN}'s view):
+    ${activeName === hostN
+      ? `"You gently approach ${guestN} and say, 'Focus on your breath.' ${guestN} looks up at you and smiles."`
+      : `"${guestN} walks toward you and says softly, 'Focus on your breath.' You look up and meet their gaze."`}
+
+  scenes.${l1} (${guestN}'s view):
+    ${activeName === guestN
+      ? `"You approach ${hostN} and say, 'Focus on your breath.' ${hostN} looks up with a warm smile."`
+      : `"${hostN} steps closer and whispers, 'Focus on your breath.' You feel their calm presence and smile back."`}
+
+### Choices (4 per language):
+- \`choices.${l0}\` → actions/dialogues the NEXT active player will choose from, in ${getLanguageName(l0)}.
+- \`choices.${l1}\` → SAME choices translated to ${getLanguageName(l1)} (consistent meaning).
+- Choices are for the NEXT player to act (turn swap happens after this scene).
+
+### Absolute rules:
+- Do NOT write both scenes from the same perspective.
+- Do NOT say "You" referring to the same person in both languages — "you" switches based on the scene's owner.
+- Do NOT use original story character names — only "${hostN}" and "${guestN}".`;
+    } else {
+      // SINGLE LANGUAGE multiplayer — sadece aktif oyuncunun dili
+      prompt += `
 
 ## Multiplayer Mode — PERSPECTIVE RULES (CRITICAL):
-- Host (player 1): ${params.hostName || 'Host'}
-- Guest (player 2): ${params.guestName || 'Guest'}
+- Host (player 1): ${hostN}
+- Guest (player 2): ${guestN}
 - **ACTIVE PLAYER (this turn's POV): ${activeName}**
-- Both host and guest are REAL players who REPLACE the original story characters.
-  If the story has two main characters (e.g. Alex and Lila), assign the first to Host and the second to Guest.
-  NEVER use the original story character names — only use "${params.hostName}" and "${params.guestName}".
+- Both host and guest are REAL players who REPLACE the original story characters. NEVER use original names.
 
 ### Perspective for THIS scene:
-- The scene MUST be written from **${activeName}'s** point of view, in second person ("you" = ${activeName}).
-- ${otherName} is the OTHER character in the scene — describe their actions, dialogue, appearance from ${activeName}'s eyes.
-- Do NOT write "${activeName}" doing something in third person; "${activeName}" is "you".
-- Do NOT write the scene from ${otherName}'s eyes.
+- Written from **${activeName}'s** point of view, in second person ("you" = ${activeName}).
+- ${otherName} is the OTHER character — describe their actions/dialogue/appearance from ${activeName}'s eyes.
+- Do NOT write "${activeName}" in third person; "${activeName}" is "you".
 
-Example (if active=${activeName}):
+Example:
   ✓ "${otherName} looks at you and smiles, '${activeName}, come closer.'"
   ✓ "You feel ${otherName}'s hand on your shoulder."
-  ✗ "${activeName} looks at ${otherName}" (wrong — ${activeName} is you)
-  ✗ "${otherName}'s heart races as she watches ${activeName}" (wrong — we're in ${activeName}'s head)
+  ✗ "${activeName} looks at ${otherName}" (wrong)
+  ✗ "${otherName}'s heart races as she watches ${activeName}" (wrong — POV leak)
 
-The 4 choices are ${activeName}'s possible actions/dialogues.`;
+The 4 choices are the NEXT active player's possible actions.`;
+    }
   }
 
   // === CHAIN-OF-THOUGHT: acknowledged_directive self-restate ===
@@ -339,21 +383,21 @@ Before composing currentScene, populate \`acknowledged_directive\` with ONE sent
   "scene_type": "${isTransition ? 'chapter_transition' : 'continuation'}",
   "acknowledged_directive": "${isTransition ? 'REQUIRED: one-sentence restatement of director directive in English' : 'optional'}",
   "scenes": {
-    "${l0}": "scene text in first language",
-    "${l1}": "scene text in second language"
+    "${l0}": "scene from FIRST player's POV in ${getLanguageName(l0)} (they are 'you')",
+    "${l1}": "scene from SECOND player's POV in ${getLanguageName(l1)} (they are 'you'); SAME EVENT, DIFFERENT PERSPECTIVE — NOT a translation"
   },
   "choices": {
     "${l0}": [
-      {"id": "1", "text": "choice in first language", "type": "action"},
-      {"id": "2", "text": "choice in first language", "type": "dialogue"},
-      {"id": "3", "text": "choice in first language", "type": "exploration"},
-      {"id": "4", "text": "choice in first language", "type": "decision"}
+      {"id": "1", "text": "NEXT active player's action in ${getLanguageName(l0)}", "type": "action"},
+      {"id": "2", "text": "dialogue option in ${getLanguageName(l0)}", "type": "dialogue"},
+      {"id": "3", "text": "exploration option in ${getLanguageName(l0)}", "type": "exploration"},
+      {"id": "4", "text": "decision option in ${getLanguageName(l0)}", "type": "decision"}
     ],
     "${l1}": [
-      {"id": "1", "text": "choice in second language", "type": "action"},
-      {"id": "2", "text": "choice in second language", "type": "dialogue"},
-      {"id": "3", "text": "choice in second language", "type": "exploration"},
-      {"id": "4", "text": "choice in second language", "type": "decision"}
+      {"id": "1", "text": "SAME 4 choices translated to ${getLanguageName(l1)} with consistent meaning", "type": "action"},
+      {"id": "2", "text": "...", "type": "dialogue"},
+      {"id": "3", "text": "...", "type": "exploration"},
+      {"id": "4", "text": "...", "type": "decision"}
     ]
   },
   "effects": {
