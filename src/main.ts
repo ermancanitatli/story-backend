@@ -11,7 +11,6 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
 import * as session from 'express-session';
-import * as expressLayouts from 'express-ejs-layouts';
 import RedisStore from 'connect-redis';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { WinstonModule } from 'nest-winston';
@@ -48,10 +47,9 @@ async function bootstrap() {
   // Admin panel: EJS view engine + static assets (public/panel-assets)
   app.setBaseViewsDir(join(__dirname, '..', 'views'));
   app.setViewEngine('ejs');
-  app.use(expressLayouts);
-  // Default layout 'panel/layout' — kendi html'i olan view'lar (login, 404, 500, rate-limited, error)
-  // render çağrısında { layout: false } geçmeli.
-  app.set('layout', 'panel/layout');
+  // Layout: her panel view'ı manuel olarak <%- include('partials/shell-header') %> +
+  // <%- include('partials/shell-footer') %> ile shell'i include eder (express-ejs-layouts
+  // NestJS @Render ile double-render sorununa yol açtığı için kaldırıldı).
   app.useStaticAssets(join(__dirname, '..', 'public'));
 
   // Expose Sentry client DSN to all EJS templates (layout reads it for optional browser SDK init).

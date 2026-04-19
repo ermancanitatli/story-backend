@@ -13,24 +13,10 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
   <link rel="stylesheet" href="/panel-assets/vendors/keenicons/styles.bundle.css" />
   <link rel="stylesheet" href="/panel-assets/css/styles.css" />
-  <!-- Panel client utils — load early so view-level inline scripts can use window.panelApi / panelToast -->
   <script src="/panel-assets/js/panel-toast.js"></script>
   <script src="/panel-assets/js/panel-api.js"></script>
-  <% if (typeof sentryDsnClient !== 'undefined' && sentryDsnClient) { %>
-    <script src="https://browser.sentry-cdn.com/7.100.0/bundle.min.js" crossorigin="anonymous"></script>
-    <script>
-      if (window.Sentry) {
-        Sentry.init({
-          dsn: '<%= sentryDsnClient %>',
-          environment: '<%= typeof appEnv !== "undefined" ? appEnv : "development" %>',
-          tracesSampleRate: 0.1,
-        });
-      }
-    </script>
-  <% } %>
 </head>
-<body class="antialiased text-base text-foreground bg-background demo1 kt-sidebar-fixed kt-header-fixed min-h-full">
-  <!-- Theme Mode -->
+<body class="antialiased text-base text-foreground bg-background">
   <script>
     const defaultThemeMode = 'light';
     let themeMode;
@@ -49,17 +35,8 @@
     }
   </script>
 
-  <div class="flex grow">
-    <%- include('partials/sidebar', { currentPath: typeof currentPath !== 'undefined' ? currentPath : '/panel', username: typeof username !== 'undefined' ? username : 'Admin' }) %>
-    <div class="flex flex-col grow">
-      <%- include('partials/header', { title: typeof title !== 'undefined' ? title : '', breadcrumbs: typeof breadcrumbs !== 'undefined' ? breadcrumbs : [], username: typeof username !== 'undefined' ? username : 'Admin' }) %>
-      <main class="grow p-5 lg:p-8 max-w-full overflow-x-auto"><%- body %></main>
-      <%- include('partials/footer') %>
-    </div>
-  </div>
-
-  <script src="/panel-assets/js/core.bundle.js"></script>
-  <script src="/panel-assets/vendors/ktui/ktui.min.js"></script>
-  <script src="/panel-assets/js/panel-session.js"></script>
-</body>
-</html>
+  <div class="flex min-h-full">
+    <%- include('sidebar', { currentPath: typeof currentPath !== 'undefined' ? currentPath : '/panel', username: typeof username !== 'undefined' ? username : 'Admin' }) %>
+    <div class="flex flex-col grow min-w-0">
+      <%- include('header', { title: typeof title !== 'undefined' ? title : '', breadcrumbs: typeof breadcrumbs !== 'undefined' ? breadcrumbs : [], username: typeof username !== 'undefined' ? username : 'Admin' }) %>
+      <main class="grow p-5 lg:p-8 overflow-x-auto">
