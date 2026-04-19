@@ -45,12 +45,17 @@ async function bootstrap() {
   const corsOrigin = configService.get<string>('CORS_ORIGIN', '*');
 
   // Admin panel: EJS view engine + static assets (public/panel-assets)
-  app.setBaseViewsDir(join(__dirname, '..', 'views'));
+  // __dirname = dist/src (prod) veya dist (legacy) — process.cwd() daha güvenilir
+  app.setBaseViewsDir(join(process.cwd(), 'views'));
   app.setViewEngine('ejs');
+  // Dev: view cache kapat ki .ejs değişimi anlık yansısın
+  if (process.env.NODE_ENV !== 'production') {
+    (app.getHttpAdapter().getInstance() as any).disable('view cache');
+  }
   // Layout: her panel view'ı manuel olarak <%- include('partials/shell-header') %> +
   // <%- include('partials/shell-footer') %> ile shell'i include eder (express-ejs-layouts
   // NestJS @Render ile double-render sorununa yol açtığı için kaldırıldı).
-  app.useStaticAssets(join(__dirname, '..', 'public'));
+  app.useStaticAssets(join(process.cwd(), 'public'));
 
   // Expose Sentry client DSN to all EJS templates (layout reads it for optional browser SDK init).
   // Empty string when unset so EJS `if (sentryDsnClient)` branch is false.
