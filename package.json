@@ -20,7 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:panel:e2e": "playwright test",
     "verify:indexes": "ts-node scripts/verify-indexes.ts",
-    "panel:profile": "ts-node scripts/panel-query-profiler.ts"
+    "panel:profile": "ts-node scripts/panel-query-profiler.ts",
+    "test:chapter-transition": "ts-node scripts/test-chapter-transition.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.0",
