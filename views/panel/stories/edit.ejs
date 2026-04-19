@@ -30,7 +30,13 @@
         <p class="text-sm text-muted-foreground">Temel bilgiler alanı (STORY-11 tarafından implement edilecek).</p>
       </div>
       <div class="tab-panel hidden" data-tab="content">
-        <p class="text-sm text-muted-foreground">Chapters + scenes (STORY-12).</p>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-base font-semibold">Bölümler (Chapters)</h3>
+          <button type="button" id="btn-add-chapter" class="kt-btn kt-btn-sm kt-btn-primary">+ Bölüm Ekle</button>
+        </div>
+        <div id="chapters-list" class="flex flex-col gap-3">
+          <p class="text-sm text-muted-foreground" id="chapters-empty">Henüz bölüm eklenmedi.</p>
+        </div>
       </div>
       <div class="tab-panel hidden" data-tab="characters">
         <p class="text-sm text-muted-foreground">Karakter yönetimi (STORY-13).</p>
@@ -39,10 +45,40 @@
         <p class="text-sm text-muted-foreground">Cover + gallery (STORY-14/15).</p>
       </div>
       <div class="tab-panel hidden" data-tab="settings">
-        <p class="text-sm text-muted-foreground">Tags + SEO (STORY-16).</p>
+        <div class="flex flex-col gap-5">
+          <div>
+            <label class="kt-form-label">Etiketler</label>
+            <div id="tags-wrapper" class="border border-border rounded-md p-2 flex flex-wrap gap-2 min-h-[42px]">
+              <input id="tags-input" type="text" class="flex-1 min-w-[120px] outline-none text-sm" placeholder="Etiket yaz, Enter veya virgül"/>
+            </div>
+            <small class="text-xs text-muted-foreground">Enter veya virgül ile ekle.</small>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="kt-form-label">Firestore Legacy ID (readonly)</label>
+              <input id="f-legacy-id" class="kt-input bg-muted/30" readonly/>
+            </div>
+            <div>
+              <label class="kt-form-label">SEO Başlık (EN)</label>
+              <input id="f-meta-title" class="kt-input"/>
+            </div>
+          </div>
+
+          <div>
+            <label class="kt-form-label">SEO Açıklama</label>
+            <textarea id="f-meta-description" class="kt-input" rows="2"></textarea>
+          </div>
+
+          <div>
+            <label class="kt-form-label">Admin Notları (dahili)</label>
+            <textarea id="f-internal-notes" class="kt-input" rows="3" placeholder="Sadece admin görür"></textarea>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
 <script src="/panel-assets/js/stories-edit.js"></script>
+<script src="/panel-assets/js/stories-chapters.js"></script>

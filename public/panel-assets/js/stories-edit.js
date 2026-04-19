@@ -75,4 +75,56 @@
   }
   document.getElementById('save-btn').addEventListener('click', () => save(false));
   document.getElementById('draft-btn').addEventListener('click', () => save(true));
+
+  // ===== Settings tab (STORY-16): tags + SEO + metadata =====
+  function renderTags(tags) {
+    const wrapper = document.getElementById('tags-wrapper');
+    const input = document.getElementById('tags-input');
+    if (!wrapper || !input) return;
+    wrapper.querySelectorAll('.tag-chip').forEach(el => el.remove());
+    (tags || []).forEach(tag => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-md bg-primary/10 text-primary';
+      chip.innerHTML = `${tag}<button type="button" class="ml-1 hover:text-destructive">×</button>`;
+      chip.querySelector('button').addEventListener('click', () => {
+        window.__story.tags = (window.__story.tags || []).filter(t => t !== tag);
+        renderTags(window.__story.tags);
+      });
+      wrapper.insertBefore(chip, input);
+    });
+  }
+
+  document.getElementById('tags-input')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = e.target.value.trim().replace(/,/g, '');
+      if (val && window.__story) {
+        window.__story.tags = window.__story.tags || [];
+        if (!window.__story.tags.includes(val)) window.__story.tags.push(val);
+        e.target.value = '';
+        renderTags(window.__story.tags);
+      }
+    }
+  });
+
+  ['f-meta-title','f-meta-description','f-internal-notes'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', () => {
+      if (!window.__story) return;
+      const val = document.getElementById(id).value;
+      const key = { 'f-meta-title': 'metaTitle', 'f-meta-description': 'metaDescription', 'f-internal-notes': 'internalNotes' }[id];
+      window.__story[key] = val;
+    });
+  });
+
+  function applyStoryToSettings() {
+    if (!window.__story) return;
+    document.getElementById('f-legacy-id').value = window.__story.legacyFirestoreId || '—';
+    document.getElementById('f-meta-title').value = window.__story.metaTitle || '';
+    document.getElementById('f-meta-description').value = window.__story.metaDescription || '';
+    document.getElementById('f-internal-notes').value = window.__story.internalNotes || '';
+    renderTags(window.__story.tags);
+  }
+
+  setTimeout(() => { if (window.__story) applyStoryToSettings(); }, 500);
+  setTimeout(() => { if (window.__story) applyStoryToSettings(); }, 1500);
 })();
