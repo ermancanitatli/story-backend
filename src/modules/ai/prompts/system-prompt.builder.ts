@@ -182,13 +182,36 @@ ${langInstruction}`;
 ## Story: ${params.storyTitle}
 ${params.storySummary}
 
-## Characters:
-${params.characters.map((c) => `- ${c.name}: ${c.description || 'No description'} (${c.gender || 'unknown'}, ${c.role || 'unknown'})`).join('\n')}
+## Player Character (PROTAGONIST — "you"):
+${(() => {
+  const chars = params.characters || [];
+  const main = chars.find((c: any) => {
+    const role = (c.role || '').toLowerCase();
+    return role === 'main' || role === 'protagonist' || role === 'player' || role === 'user';
+  });
+  const mainGender = main?.gender || 'unknown';
+  const playerGender = params.playerGender || mainGender;
+  const playerName = params.playerName || main?.name || 'Player';
+  if (main) {
+    return `- **${playerName}** (${playerGender}, ${main.role || 'protagonist'})\n  Description: ${main.description || 'No description'}\n  NOTE: The player IS this character. Use the name "${playerName}" — do NOT call them "${main.name}" (the original story name is replaced by the player's name). Write scenes in second person ("you") from this character's perspective.`;
+  }
+  return `- **${playerName}** (${playerGender}, protagonist)\n  NOTE: Write scenes in second person ("you") from this character's perspective.`;
+})()}
+
+## Other Characters (NPCs):
+${(() => {
+  const chars = params.characters || [];
+  const main = chars.find((c: any) => {
+    const role = (c.role || '').toLowerCase();
+    return role === 'main' || role === 'protagonist' || role === 'player' || role === 'user';
+  });
+  const npcs = chars.filter((c: any) => c !== main);
+  if (npcs.length === 0) return '(none — this is a solo scene)';
+  return npcs.map((c: any) => `- ${c.name}: ${c.description || 'No description'} (${c.gender || 'unknown'}, ${c.role || 'npc'})`).join('\n');
+})()}
 
 ## Current Chapter: ${params.currentChapter}${params.chapterTitle ? ` - ${params.chapterTitle}` : ''}
 ${params.chapterSummary || ''}
-
-## Player: ${params.playerName || 'Player'}${params.playerGender ? ` (${params.playerGender})` : ''}
 
 ## Choice Categories for this scene (use ${categories.length} of these):
 ${categories.map((c) => `- ${c}`).join('\n')}
@@ -204,13 +227,15 @@ ${
 
 ## Rules:
 1. Write currentScene as 3-5 sentences, vivid and immersive
-2. Provide exactly 4 choices with different types (action, dialogue, exploration, decision)
-3. Each choice should have meaningful consequences
-4. Include emotional changes (-5 to +5) in effects
-5. Track items gained/lost
-6. Use isEnding=true only when the story reaches a natural conclusion
-7. endingType: victory, defeat, neutral, or cliffhanger
-8. MANDATORY FIELD: effects.suggestChapterTransition MUST be a boolean (true or false). NEVER omit this field. NEVER leave it null. Default false unless pacing instructions below say otherwise.`;
+2. The player character (protagonist) is addressed as "you" — use the player's name when other characters speak to them
+3. Do NOT use the original story protagonist name if it was replaced by the player's name (see "Player Character" section above)
+4. Provide exactly 4 choices with different types (action, dialogue, exploration, decision)
+5. Each choice should have meaningful consequences
+6. Include emotional changes (-5 to +5) in effects
+7. Track items gained/lost
+8. Use isEnding=true only when the story reaches a natural conclusion
+9. endingType: victory, defeat, neutral, or cliffhanger
+10. MANDATORY FIELD: effects.suggestChapterTransition MUST be a boolean (true or false). NEVER omit this field. NEVER leave it null. Default false unless pacing instructions below say otherwise.`;
 
   // === CHAPTER PACING INSTRUCTIONS ===
   if (params.isLastChapter) {
@@ -270,10 +295,13 @@ Develop the story freely. MANDATORY: effects.suggestChapterTransition = false.`;
     prompt += `
 
 ## Multiplayer Mode:
-- Host: ${params.hostName || 'Host'}
-- Guest: ${params.guestName || 'Guest'}
-- Active player perspective: ${params.activePlayerName || 'Host'}
-- Write the scene from the active player's perspective`;
+- Host (player 1): ${params.hostName || 'Host'}
+- Guest (player 2): ${params.guestName || 'Guest'}
+- Active player for this turn: ${params.activePlayerName || params.hostName || 'Host'}
+- Both host and guest are REAL players who REPLACE the original story characters.
+  If the story has two main characters (e.g. Alex and Lila), assign the first to Host and the second to Guest.
+  From now on use "${params.hostName || 'Host'}" and "${params.guestName || 'Guest'}" — NEVER use the original story character names.
+- Write the scene from the active player's ("${params.activePlayerName || 'Host'}") perspective in second person ("you"), with the other player as a speaking/interacting character.`;
   }
 
   // === CHAIN-OF-THOUGHT: acknowledged_directive self-restate ===
