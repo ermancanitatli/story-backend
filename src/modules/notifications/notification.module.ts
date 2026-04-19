@@ -38,6 +38,7 @@ import { createRedisClient } from '../../config/redis.config';
     NotificationHistoryService,
     UserSegmentationService,
     BroadcastRateLimitGuard,
+    'REDIS_CLIENT',
   ],
 })
 export class NotificationModule {}
