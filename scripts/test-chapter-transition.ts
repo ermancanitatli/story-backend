@@ -13,16 +13,28 @@
  * ENV:
  *   MODE           — 'single' (default) veya 'multi'
  *   BASE_URL       — default http://localhost:3000
- *   STORY_ID       — zorunlu (her iki modda da)
- *   MAX_STEPS      — default 30 (multi'de turn sayısı)
- *   LANGUAGE       — single mod: default 'tr'
- *   LANGUAGE_HOST  — multi mod: default 'tr'
- *   LANGUAGE_GUEST — multi mod: default 'en' (bilingual test için farklı dil)
- *   SEED           — deterministic rasgelelik
- *   DRY_PRINT      — 'full' tüm scene, default 'short' (140 char)
- *   CLEANUP        — '1' ise session silinir
- *   INSPECT_SUMMARY — '1' (default) DB'den rolling/bridge summary basılır
- *   MONGO_URI      — prod default
+ *   STORY_ID       — zorunlu
+ *   MAX_STEPS      — default 30
+ *
+ *   Single mode:
+ *     LANGUAGE      — default 'tr'
+ *     PLAYER_NAME   — default 'TestBot' (iOS normalde localization .mainCharacter kullanıyor)
+ *     PLAYER_GENDER — 'male' | 'female', default 'male'
+ *
+ *   Multi mode:
+ *     LANGUAGE_HOST  — default 'tr'
+ *     LANGUAGE_GUEST — default 'en'
+ *     HOST_NAME      — default 'Erman'
+ *     HOST_GENDER    — default 'male'
+ *     GUEST_NAME     — default 'Esra'
+ *     GUEST_GENDER   — default 'female'
+ *
+ *   Ortak:
+ *     SEED           — deterministic rasgelelik
+ *     DRY_PRINT      — 'full' tüm scene, default 'short' (140 char)
+ *     CLEANUP        — '1' ise session silinir
+ *     INSPECT_SUMMARY — '1' (default) DB'den rolling/bridge summary basılır
+ *     MONGO_URI      — prod default
  *
  * Exit code: pacing/summary assertion fail ise 1, pass ise 0.
  */
@@ -36,9 +48,19 @@ const MODE = (process.env.MODE || 'single').toLowerCase();
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const STORY_ID = process.env.STORY_ID;
 const MAX_STEPS = parseInt(process.env.MAX_STEPS || '30', 10);
+
+// Single mode
 const LANGUAGE = process.env.LANGUAGE || 'tr';
+const PLAYER_NAME = process.env.PLAYER_NAME || 'Erman';
+const PLAYER_GENDER = (process.env.PLAYER_GENDER || 'male').toLowerCase();
+
+// Multi mode
 const LANGUAGE_HOST = process.env.LANGUAGE_HOST || 'tr';
 const LANGUAGE_GUEST = process.env.LANGUAGE_GUEST || 'en';
+const HOST_NAME = process.env.HOST_NAME || 'Erman';
+const HOST_GENDER = (process.env.HOST_GENDER || 'male').toLowerCase();
+const GUEST_NAME = process.env.GUEST_NAME || 'Esra';
+const GUEST_GENDER = (process.env.GUEST_GENDER || 'female').toLowerCase();
 const PRINT_MODE = process.env.DRY_PRINT === 'full' ? 'full' : 'short';
 const CLEANUP = process.env.CLEANUP === '1';
 const SEED = process.env.SEED ? parseInt(process.env.SEED, 10) : null;
@@ -188,7 +210,7 @@ function printSummarySnapshot(snap: SummarySnapshot) {
 
 async function runSinglePlayer() {
   console.log(`[mode] SINGLE PLAYER`);
-  console.log(`[config] BASE=${BASE_URL} STORY=${STORY_ID} MAX=${MAX_STEPS} LANG=${LANGUAGE} SEED=${SEED ?? 'random'} INSPECT_SUMMARY=${INSPECT_SUMMARY}`);
+  console.log(`[config] BASE=${BASE_URL} STORY=${STORY_ID} MAX=${MAX_STEPS} LANG=${LANGUAGE} PLAYER=${PLAYER_NAME} (${PLAYER_GENDER}) SEED=${SEED ?? 'random'}`);
 
   // Mongo client (inspection için) — opsiyonel, başarısız olursa sadece summary logları gösterilmez
   let mongoClient: MongoClient | null = null;
@@ -222,8 +244,8 @@ async function runSinglePlayer() {
     '/api/story-sessions',
     {
       storyId: STORY_ID,
-      playerName: 'TestBot',
-      playerGender: 'male',
+      playerName: PLAYER_NAME,
+      playerGender: PLAYER_GENDER,
       languageCode: LANGUAGE,
     },
     headers,
@@ -548,7 +570,12 @@ interface Player {
   headers: ApiHeaders;
 }
 
-async function authenticatePlayer(label: string, gender: 'male' | 'female', language: string): Promise<Player> {
+async function authenticatePlayer(
+  label: string,
+  name: string,
+  gender: 'male' | 'female',
+  language: string,
+): Promise<Player> {
   const deviceId = `test-mp-${label}-${Date.now()}-${Math.floor(rand() * 10000)}`;
   const auth = await call('POST', '/api/auth/anonymous', { deviceId });
   const token: string | undefined = auth.accessToken || auth.access_token;
@@ -557,7 +584,7 @@ async function authenticatePlayer(label: string, gender: 'male' | 'female', lang
   return {
     userId,
     token,
-    name: label === 'host' ? 'Alice' : 'Bob',
+    name,
     gender,
     language,
     headers: { Authorization: `Bearer ${token}` },
@@ -633,7 +660,8 @@ async function manualInviteFlow(
 
 async function runMultiplayer() {
   console.log(`[mode] MULTIPLAYER — bilingual test`);
-  console.log(`[config] BASE=${BASE_URL} STORY=${STORY_ID} MAX=${MAX_STEPS} LANG_HOST=${LANGUAGE_HOST} LANG_GUEST=${LANGUAGE_GUEST} SEED=${SEED ?? 'random'}`);
+  console.log(`[config] BASE=${BASE_URL} STORY=${STORY_ID} MAX=${MAX_STEPS}`);
+  console.log(`  HOST=${HOST_NAME} (${HOST_GENDER}, ${LANGUAGE_HOST})  GUEST=${GUEST_NAME} (${GUEST_GENDER}, ${LANGUAGE_GUEST})  SEED=${SEED ?? 'random'}`);
 
   // Mongo client
   let mongoClient: MongoClient | null = null;
@@ -648,8 +676,8 @@ async function runMultiplayer() {
   }
 
   // İki oyuncu auth
-  const host = await authenticatePlayer('host', 'male', LANGUAGE_HOST);
-  const guest = await authenticatePlayer('guest', 'female', LANGUAGE_GUEST);
+  const host = await authenticatePlayer('host', HOST_NAME, HOST_GENDER as 'male' | 'female', LANGUAGE_HOST);
+  const guest = await authenticatePlayer('guest', GUEST_NAME, GUEST_GENDER as 'male' | 'female', LANGUAGE_GUEST);
   console.log(`[auth] host=${host.userId.substring(0, 8)} (${host.language}) guest=${guest.userId.substring(0, 8)} (${guest.language})`);
 
   // Manuel invite ile eşleştir (iki arkadaş simülasyonu)
