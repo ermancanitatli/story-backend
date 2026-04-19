@@ -380,7 +380,23 @@ Example — if ${activeName} chose "Esra'nın belini düzelt":
 ### Absolute rules:
 - scenes.host and scenes.guest MUST describe the same event from different POVs — NOT identical text.
 - "sen" switches based on which scene's owner.
-- NEVER use original story character names.`;
+- NEVER use original story character names.
+
+### MANDATORY chain-of-thought (fill these BEFORE writing scenes):
+- "active_player_confirmation" MUST equal "${activeName}" — literal name match.
+- "host_pov_you_refers_to" MUST equal "${hostN}" — in scenes.host, "sen" = ${hostN}.
+- "guest_pov_you_refers_to" MUST equal "${guestN}" — in scenes.guest, "sen" = ${guestN}.
+These fields are proof of perspective awareness. If you write them correctly but then output identical scenes, the response is rejected.
+
+### ANTI-PATTERNS (response REJECTED if ANY match):
+  ✗ scenes.host === scenes.guest (byte-for-byte identical text)
+  ✗ Both scenes use "sen" referring to SAME person (e.g., both say "${hostN}'a yaklaşıyorsun")
+  ✗ scenes.host says "${hostN}'a yaklaşıyorsun" (wrong — ${hostN} is "sen" in host POV, NOT an object)
+  ✗ scenes.guest says "${guestN}'a yaklaşıyorsun" (wrong — ${guestN} is "sen" in guest POV)
+  ✗ scenes.host and scenes.guest differ ONLY in pronouns/names — deeper experiential difference required
+  ✗ Copy-pasting scenes.host into scenes.guest field
+
+### Remember: 4 choices are the NEXT player's action menu.`;
     } else {
       // SINGLE LANGUAGE multiplayer — sadece aktif oyuncunun dili (eski davranış, nadir kullanım)
       prompt += `
@@ -423,9 +439,12 @@ Before composing currentScene, populate \`acknowledged_directive\` with ONE sent
 {
   "scene_type": "${isTransition ? 'chapter_transition' : 'continuation'}",
   "acknowledged_directive": "${isTransition ? 'REQUIRED: one-sentence restatement of director directive in English' : 'optional'}",
+  "active_player_confirmation": "MUST equal active player's literal name (proof of awareness)",
+  "host_pov_you_refers_to": "MUST equal host's literal name (in scenes.host, 'sen' refers to this person)",
+  "guest_pov_you_refers_to": "MUST equal guest's literal name (in scenes.guest, 'sen' refers to this person)",
   "scenes": {
-    "host": "scene from HOST's POV in ${getLanguageName(lang)} (host is 'sen')",
-    "guest": "scene from GUEST's POV in ${getLanguageName(lang)} (guest is 'sen'); SAME EVENT, DIFFERENT PERSPECTIVE — NOT identical text"
+    "host": "scene from HOST's POV in ${getLanguageName(lang)} (host is 'sen', 3-5 sentences)",
+    "guest": "scene from GUEST's POV in ${getLanguageName(lang)} (guest is 'sen', 3-5 sentences); SAME EVENT, DIFFERENT PERSPECTIVE — NOT identical text"
   },
   "choices": [
     {"id": "1", "text": "NEXT active player's action in ${getLanguageName(lang)}", "type": "action"},
@@ -524,6 +543,12 @@ export function buildUserMessage(params: {
   // === Memory tiers ===
   rollingSummary?: string;
   chapterBridges?: string[];
+  // === Multiplayer dual POV reminder (tail sandwich) ===
+  multiplayerDualPov?: {
+    hostName: string;
+    guestName: string;
+    activeName: string;
+  };
 }): string {
   if (params.type === 'start') {
     return 'Begin the story. Set the scene and present the first set of choices.';
@@ -576,6 +601,19 @@ export function buildUserMessage(params: {
     message += `First, fill acknowledged_directive with a one-sentence restatement. Then write currentScene as an ESTABLISHING SHOT fulfilling that directive. Do NOT continue the previous chapter's physical scene.`;
   } else {
     message += `Continue the story based on this choice.`;
+  }
+
+  // === Multiplayer dual POV — tail sandwich reminder ===
+  // Prompt sonu = en yüksek recency bias. Aktif oyuncu ve POV mapping'i
+  // burada tekrarla ki Grok history'deki tek-POV pattern'ini kırabilsin.
+  if (params.multiplayerDualPov) {
+    const { hostName, guestName, activeName } = params.multiplayerDualPov;
+    message += `\n\n[DUAL POV REMINDER — highest priority, end of prompt]\n`;
+    message += `Active this turn: ${activeName}\n`;
+    message += `scenes.host → "sen" = ${hostName} (${guestName} is 3rd person)\n`;
+    message += `scenes.guest → "sen" = ${guestName} (${hostName} is 3rd person)\n`;
+    message += `scenes.host and scenes.guest MUST be DIFFERENT TEXT describing the same event from each player's own eyes.\n`;
+    message += `Fill "active_player_confirmation", "host_pov_you_refers_to", "guest_pov_you_refers_to" correctly BEFORE writing scenes.`;
   }
 
   return message;

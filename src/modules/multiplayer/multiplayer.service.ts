@@ -139,6 +139,37 @@ export class MultiplayerService {
       baseMaxTokens: 8000,
     });
 
+    // DUAL POV VALIDATION (initial scene) — scenes.host === scenes.guest ise delta retry
+    if (grokResponse.scenes) {
+      const sc: any = grokResponse.scenes;
+      if (sc.host && sc.guest) {
+        const h = String(sc.host).trim();
+        const g = String(sc.guest).trim();
+        if (h && h === g) {
+          this.logger.warn(
+            `[dual-pov][initial] identical scenes, guest delta retry`,
+          );
+          try {
+            const rewritten = await this.aiService.generatePovPerspective({
+              existingScene: h,
+              existingPovName: session.hostName || 'Host',
+              targetPovName: session.guestName || 'Guest',
+              otherName: session.hostName || 'Host',
+              languageCode: session.hostLanguageCode || 'en',
+            });
+            if (rewritten && rewritten !== h) {
+              sc.guest = rewritten;
+              this.logger.log(`[dual-pov][initial] delta rewrite succeeded`);
+            }
+          } catch (err) {
+            this.logger.warn(
+              `[dual-pov][initial] delta err: ${(err as Error).message}`,
+            );
+          }
+        }
+      }
+    }
+
     // Çift dilli response normalize et
     let sceneText: string;
     let choicesData: any;
@@ -293,8 +324,33 @@ export class MultiplayerService {
 
     // Generate next scene
     const recentDocs = await this.progressModel.find({ sessionId: session._id }).sort({ turnOrder: -1 }).limit(10);
-    // ⚠️ reverse() in-place — orijinali koru ki memory tier'ları okurken bozulmasın
-    const allRecentScenes = [...recentDocs].reverse().map((p) => p.currentScene).filter(Boolean);
+    // ⚠️ reverse() in-place — orijinali koru
+    // Dual POV handling: progress doc'unda scenes.host + scenes.guest varsa
+    // AI'a giden history'de her iki perspective'i etiketli bas. Bu sayede AI
+    // "bu hikayede format hep tek POV" gibi pattern mimicry'e kapılmıyor.
+    const hostLabel = session.hostName || 'Host';
+    const guestLabel = session.guestName || 'Guest';
+    const allRecentScenes = [...recentDocs]
+      .reverse()
+      .map((p: any) => {
+        const sc = p.scenes;
+        // Same-language dual perspective: scenes.host + scenes.guest
+        if (sc?.host && sc?.guest) {
+          return `[${hostLabel} POV]\n${sc.host}\n\n[${guestLabel} POV]\n${sc.guest}`;
+        }
+        // Bilingual (tr-en) — her iki dilde ve her iki POV
+        if (sc && typeof sc === 'object') {
+          const langs = Object.keys(sc).filter((k) => k !== 'host' && k !== 'guest');
+          if (langs.length >= 2) {
+            return langs
+              .map((l) => `[${l.toUpperCase()}]\n${sc[l]}`)
+              .join('\n\n');
+          }
+        }
+        // Fallback — eski progress docs (sadece currentScene)
+        return p.currentScene || '';
+      })
+      .filter(Boolean);
 
     const clone = session.storyClone || {};
 
@@ -351,12 +407,22 @@ export class MultiplayerService {
       chapterBridges: tierChapterBridges,
       recentHistory,
     });
+    // Dual POV tail reminder — her zaman aktif (bilingual veya same-lang)
+    const activeNameForPrompt =
+      userId === session.hostId?.toString()
+        ? session.hostName || 'Host'
+        : session.guestName || 'Guest';
     const userMessage = buildUserMessage({
       type: 'continue',
       userChoice: choice.text,
       recentHistory,
       rollingSummary: tierRollingSummary,
       chapterBridges: tierChapterBridges,
+      multiplayerDualPov: {
+        hostName: session.hostName || 'Host',
+        guestName: session.guestName || 'Guest',
+        activeName: activeNameForPrompt,
+      },
     });
 
     // Multiplayer dual perspective — yüksek token ihtiyacı
@@ -431,6 +497,61 @@ export class MultiplayerService {
         throw new BadRequestException(
           `AI 3 deneme sonrası geçerli choice üretemedi (${kept.minCount}/4, threshold=${acceptableThreshold}).`,
         );
+      }
+    }
+
+    // === DUAL POV VALIDATION — scenes.host === scenes.guest ise guest delta retry ===
+    // Same-lang dual perspective mode: scenes.host ve scenes.guest byte-eş olmamalı.
+    // Eş ise guest POV'u tek başına ucuz bir LLM çağrısıyla yeniden üret.
+    if (grokResponse.scenes) {
+      const sc: any = grokResponse.scenes;
+      if (sc.host && sc.guest) {
+        const hostScene = String(sc.host).trim();
+        const guestScene = String(sc.guest).trim();
+        const activeNameForValidate =
+          userId === session.hostId?.toString()
+            ? session.hostName || 'Host'
+            : session.guestName || 'Guest';
+        if (hostScene && hostScene === guestScene) {
+          this.logger.warn(
+            `[dual-pov] identical scenes detected (active=${activeNameForValidate}), retrying with guest-only delta rewrite`,
+          );
+          try {
+            // Active oyuncu kim? Onun POV'unu base al, diğerini rewrite et.
+            const isHostActive = userId === session.hostId?.toString();
+            const sourcePov = isHostActive
+              ? { name: session.hostName || 'Host', scene: hostScene }
+              : { name: session.guestName || 'Guest', scene: guestScene };
+            const targetPov = isHostActive
+              ? { name: session.guestName || 'Guest' }
+              : { name: session.hostName || 'Host' };
+            const rewritten = await this.aiService.generatePovPerspective({
+              existingScene: sourcePov.scene,
+              existingPovName: sourcePov.name,
+              targetPovName: targetPov.name,
+              otherName: sourcePov.name,
+              languageCode: session.hostLanguageCode || 'en',
+            });
+            if (rewritten && rewritten !== sourcePov.scene) {
+              if (isHostActive) {
+                sc.guest = rewritten;
+              } else {
+                sc.host = rewritten;
+              }
+              this.logger.log(
+                `[dual-pov] delta rewrite succeeded for ${targetPov.name}'s POV (len=${rewritten.length})`,
+              );
+            } else {
+              this.logger.warn(
+                `[dual-pov] delta rewrite returned empty/same — keeping identical scenes (degraded)`,
+              );
+            }
+          } catch (err) {
+            this.logger.warn(
+              `[dual-pov] delta rewrite err: ${(err as Error).message}`,
+            );
+          }
+        }
       }
     }
 
@@ -537,9 +658,24 @@ export class MultiplayerService {
       if (docs.length <= 2) return;
 
       const orderedAsc = [...docs].reverse();
+      // Summary için scenes.host + scenes.guest varsa etiketli birleştir,
+      // yoksa fallback currentScene. Objective narrator prompt bunları
+      // 3. şahısta nötr özete çevirir.
       const scenesToSummarize = orderedAsc
         .slice(0, orderedAsc.length - 2)
-        .map((p) => p.currentScene)
+        .map((p: any) => {
+          const sc = p.scenes;
+          if (sc?.host && sc?.guest) {
+            return `[HOST POV] ${sc.host}\n[GUEST POV] ${sc.guest}`;
+          }
+          if (sc && typeof sc === 'object') {
+            const langs = Object.keys(sc).filter((k) => k !== 'host' && k !== 'guest');
+            if (langs.length >= 2) {
+              return langs.map((l) => `[${l}] ${sc[l]}`).join('\n');
+            }
+          }
+          return p.currentScene || '';
+        })
         .filter(Boolean);
       if (scenesToSummarize.length === 0) return;
 
@@ -547,6 +683,7 @@ export class MultiplayerService {
         scenesToSummarize,
         existingSummary || undefined,
         languageCode,
+        true, // isMultiplayer — perspective-free objective narrator
       );
       if (!newSummary) return;
 

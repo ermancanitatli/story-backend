@@ -149,6 +149,7 @@ export class AiService {
     newScenes: string[],
     existingSummary?: string,
     languageCode?: string,
+    isMultiplayer: boolean = false,
   ): Promise<string> {
     if (!newScenes || newScenes.length === 0) return '';
 
@@ -158,10 +159,17 @@ export class AiService {
 
     const langInstruction = this.buildSummaryLanguageInstruction(languageCode);
 
+    // Multiplayer: perspective-free (objective narrator) — iki oyuncuyu 3. şahıs
+    // gözünden anlat, "sen/ben" yasak. Bu özet sonraki turn'de dual perspective
+    // üretiminin input'u olduğu için POV-locked olmamalı.
+    const povInstruction = isMultiplayer
+      ? ' CRITICAL: Write in THIRD PERSON OBJECTIVE NARRATOR voice. Do NOT use "you" / "sen" / "I". Use character names (e.g. "Erman yaklaştı, Esra gülümsedi"). This summary is neutral memory for dual-perspective scene generation.'
+      : '';
+
     const userContent = existingSummary
       ? `Previous rolling summary:\n${existingSummary}\n\nNew scenes to merge:\n${scenesText}\n\n` +
-        `Update the summary incorporating the new scenes. Keep: character actions, decisions, promises made, key emotional shifts. Skip: atmospheric descriptions, weather, scenery. Output 2-4 sentences, past tense, factual tone, plain text only (no JSON, no bullets). ${langInstruction}`
-      : `Scenes:\n${scenesText}\n\nCompress into 2-4 sentences. Keep: character actions, decisions, promises, emotional shifts. Past tense, factual. Plain text only. ${langInstruction}`;
+        `Update the summary incorporating the new scenes. Keep: character actions, decisions, promises made, key emotional shifts. Skip: atmospheric descriptions, weather, scenery. Output 2-4 sentences, past tense, factual tone, plain text only (no JSON, no bullets). ${langInstruction}${povInstruction}`
+      : `Scenes:\n${scenesText}\n\nCompress into 2-4 sentences. Keep: character actions, decisions, promises, emotional shifts. Past tense, factual. Plain text only. ${langInstruction}${povInstruction}`;
 
     try {
       const response = await fetch(this.apiUrl, {
@@ -176,7 +184,7 @@ export class AiService {
             {
               role: 'system',
               content:
-                `You are a story editor. Produce concise factual summaries. Do not invent facts. Do not use dramatic prose. Plain narrative past tense only. ${langInstruction}`,
+                `You are a story editor. Produce concise factual summaries. Do not invent facts. Do not use dramatic prose. Plain narrative past tense only. ${langInstruction}${povInstruction}`,
             },
             { role: 'user', content: userContent },
           ],
@@ -257,6 +265,74 @@ export class AiService {
     } catch (err) {
       this.logger.warn(
         `summarizeForTransition error: ${(err as Error).message}`,
+      );
+      return '';
+    }
+  }
+
+  /**
+   * Dual perspective delta retry — host sahnesi tamam ama guest sahnesi
+   * aynı çıktıysa, guest POV'u tek başına yeniden üret. Çok daha ucuz
+   * (tek sahne, 500 token çıktı) ve izole edilmiş tek perspective.
+   *
+   * Kullanım: validateMultiplayerChoices sonrası scenes.host === scenes.guest
+   * durumunda submitChoice içinden çağrılır.
+   */
+  async generatePovPerspective(params: {
+    existingScene: string;
+    existingPovName: string; // mevcut sahnenin POV'u (ör. "Erman")
+    targetPovName: string;   // istenen POV (ör. "Esra")
+    otherName: string;       // diğer kişinin adı (mevcut POV'da 3. şahıs olacak)
+    languageCode?: string;
+  }): Promise<string> {
+    const langInstruction = this.buildSummaryLanguageInstruction(params.languageCode);
+
+    const userContent =
+      `The following scene describes an event from ${params.existingPovName}'s POV:\n` +
+      `"""\n${params.existingScene}\n"""\n\n` +
+      `Rewrite this SAME EVENT from ${params.targetPovName}'s POV.\n` +
+      `Rules:\n` +
+      `- "sen" (second person) = ${params.targetPovName} (NOT ${params.existingPovName})\n` +
+      `- ${params.existingPovName} is 3rd person in your output\n` +
+      `- Same facts, decisions, dialogue — different INTERNAL experience\n` +
+      `- Add ${params.targetPovName}'s sensory/emotional perception\n` +
+      `- 3-5 sentences, plain text, no JSON, no quotes around output\n` +
+      `${langInstruction}`;
+
+    try {
+      const response = await fetch(this.apiUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content: `You are a POV rewriter. Take a scene and rewrite it from another character's perspective. Keep all events factual, only change internal perception and pronouns. ${langInstruction}`,
+            },
+            { role: 'user', content: userContent },
+          ],
+          temperature: 0.5,
+          max_tokens: 500,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        this.logger.warn(
+          `generatePovPerspective failed (${response.status}): ${errorText}`,
+        );
+        return '';
+      }
+
+      const data = await response.json();
+      return (data.choices?.[0]?.message?.content?.trim() || '') as string;
+    } catch (err) {
+      this.logger.warn(
+        `generatePovPerspective error: ${(err as Error).message}`,
       );
       return '';
     }
