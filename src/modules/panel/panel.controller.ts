@@ -4,58 +4,64 @@ import {
   Get,
   Post,
   Render,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
-import { Req } from '@nestjs/common';
-import { timingSafeEqual } from 'crypto';
 import { SessionAuthGuard } from './guards/session-auth.guard';
 import { PanelPublic } from './decorators/panel-public.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { AdminUsersService } from './admin-users.service';
 
-type PanelSession = { isAdmin?: boolean };
+type PanelSession = {
+  adminId?: string;
+  username?: string;
+  save: (cb: (err: any) => void) => void;
+  destroy: (cb: (err: any) => void) => void;
+};
 
 @Controller('panel')
 @Public()
 @UseGuards(SessionAuthGuard)
 export class PanelController {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly adminUsersService: AdminUsersService) {}
 
   @Get('login')
   @PanelPublic()
-  @Render('panel/login')
-  showLogin(@Req() req: Request & { session: PanelSession }) {
-    if (req.session?.isAdmin === true) {
-      return { redirect: '/panel' };
+  showLogin(
+    @Req() req: Request & { session: PanelSession },
+    @Res() res: Response,
+  ) {
+    if (req.session?.adminId) {
+      return res.redirect('/panel');
     }
-    return { error: null };
+    return res.render('panel/login', { error: null, username: '' });
   }
 
   @Post('login')
   @PanelPublic()
   async submitLogin(
+    @Body('username') username: string,
     @Body('password') password: string,
-    @Req() req: Request & { session: PanelSession & { save: (cb: (err: any) => void) => void } },
+    @Req() req: Request & { session: PanelSession },
     @Res() res: Response,
   ) {
-    const expected = this.configService.get<string>('ADMIN_PASSWORD') || '';
-    if (!expected) {
-      return res.status(500).render('panel/login', {
-        error: 'Sunucu yapılandırma hatası: ADMIN_PASSWORD tanımlı değil.',
+    const user = await this.adminUsersService.verify(username, password);
+    if (!user) {
+      return res.status(401).render('panel/login', {
+        error: 'Kullanıcı adı veya şifre hatalı.',
+        username: username || '',
       });
     }
 
-    if (!password || !this.constantTimeEquals(password, expected)) {
-      return res.status(401).render('panel/login', { error: 'Şifre hatalı.' });
-    }
-
-    req.session.isAdmin = true;
+    req.session.adminId = user._id.toString();
+    req.session.username = user.username;
     req.session.save((err) => {
       if (err) {
         return res.status(500).render('panel/login', {
           error: 'Oturum kaydedilemedi, tekrar deneyin.',
+          username: user.username,
         });
       }
       res.redirect('/panel');
@@ -64,7 +70,7 @@ export class PanelController {
 
   @Post('logout')
   logout(
-    @Req() req: Request & { session: { destroy: (cb: (err: any) => void) => void } },
+    @Req() req: Request & { session: PanelSession },
     @Res() res: Response,
   ) {
     req.session.destroy(() => {
@@ -75,18 +81,10 @@ export class PanelController {
 
   @Get()
   @Render('panel/dashboard')
-  dashboard() {
-    return { title: 'Panel' };
-  }
-
-  private constantTimeEquals(a: string, b: string): boolean {
-    const bufA = Buffer.from(a);
-    const bufB = Buffer.from(b);
-    if (bufA.length !== bufB.length) {
-      // timingSafeEqual aynı uzunluk ister; sabit-maliyetli dummy karşılaştırma
-      timingSafeEqual(Buffer.alloc(bufB.length), Buffer.alloc(bufB.length));
-      return false;
-    }
-    return timingSafeEqual(bufA, bufB);
+  dashboard(@Req() req: Request & { session: PanelSession }) {
+    return {
+      title: 'Panel',
+      username: req.session?.username || 'Admin',
+    };
   }
 }

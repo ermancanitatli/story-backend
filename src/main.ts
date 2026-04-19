@@ -10,6 +10,7 @@ import RedisStore from 'connect-redis';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { AppModule } from './app.module';
+import { resolveSessionSecret } from './modules/panel/session-secret.helper';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -28,10 +29,8 @@ async function bootstrap() {
   app.useStaticAssets(join(__dirname, '..', 'public'));
 
   // Admin panel: express-session (Redis store, mevcut Redis'i kullanır)
-  const sessionSecret = configService.get<string>('SESSION_SECRET');
-  if (!sessionSecret) {
-    console.warn('⚠️ SESSION_SECRET not set — admin panel session will not persist securely');
-  }
+  // SESSION_SECRET env'de yoksa otomatik üretilir ve .env'e yazılır.
+  const sessionSecret = resolveSessionSecret();
   const sessionHost = configService.get<string>('REDIS_HOST', 'localhost');
   const sessionPort = configService.get<number>('REDIS_PORT', 6379);
   const sessionPassword = configService.get<string>('REDIS_PASSWORD') || undefined;
@@ -44,7 +43,7 @@ async function bootstrap() {
     session({
       store: new RedisStore({ client: sessionRedis, prefix: 'panel-sess:' }),
       name: 'panel.sid',
-      secret: sessionSecret || 'dev-insecure-secret-change-me',
+      secret: sessionSecret,
       resave: false,
       saveUninitialized: false,
       cookie: {

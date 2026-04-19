@@ -22,7 +22,7 @@ export class SessionAuthGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<Request & { session: any }>();
     const res = context.switchToHttp().getResponse<Response>();
 
-    if (req.session?.isAdmin === true) return true;
+    if (req.session?.adminId) return true;
 
     res.redirect('/panel/login');
     return false;

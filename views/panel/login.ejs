@@ -67,6 +67,23 @@
           <% } %>
 
           <div class="flex flex-col gap-1">
+            <label class="kt-form-label font-normal text-mono" for="username">
+              Kullanıcı Adı
+            </label>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              class="kt-input"
+              placeholder="admin"
+              autocomplete="username"
+              value="<%= typeof username !== 'undefined' ? username : '' %>"
+              required
+              <%= (typeof username === 'undefined' || !username) ? 'autofocus' : '' %>
+            />
+          </div>
+
+          <div class="flex flex-col gap-1">
             <label class="kt-form-label font-normal text-mono" for="password">
               Şifre
             </label>
@@ -75,10 +92,10 @@
                 id="password"
                 name="password"
                 type="password"
-                placeholder="Admin şifrenizi girin"
+                placeholder="Şifrenizi girin"
                 autocomplete="current-password"
                 required
-                autofocus
+                <%= (typeof username !== 'undefined' && username) ? 'autofocus' : '' %>
               />
               <button class="kt-btn kt-btn-icon" data-kt-toggle-password-trigger="true" type="button" aria-label="Şifreyi göster/gizle">
                 <i class="ki-filled ki-eye text-muted-foreground toggle-password-active:hidden"></i>
