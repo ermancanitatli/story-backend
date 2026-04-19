@@ -20,47 +20,85 @@
       <div class="p-5">
         <!-- Genel -->
         <div class="user-panel" data-tab="general">
-          <div class="flex flex-col gap-3">
-            <div><label class="kt-form-label">Handle</label><input id="f-handle" class="kt-input"/></div>
-            <div><label class="kt-form-label">Display Name</label><input id="f-display" class="kt-input"/></div>
-            <div><label class="kt-form-label">Email</label><input id="f-email" class="kt-input" type="email"/></div>
+          <div class="grid gap-5">
+            <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+              <label class="kt-form-label flex items-center gap-1 max-w-56" for="f-handle">Handle</label>
+              <input id="f-handle" class="kt-input"/>
+            </div>
+            <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+              <label class="kt-form-label flex items-center gap-1 max-w-56" for="f-display">Display Name</label>
+              <input id="f-display" class="kt-input"/>
+            </div>
+            <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+              <label class="kt-form-label flex items-center gap-1 max-w-56" for="f-email">Email</label>
+              <input id="f-email" class="kt-input" type="email"/>
+            </div>
           </div>
         </div>
 
         <!-- Plan & Kredi -->
         <div class="user-panel hidden" data-tab="plan">
-          <div class="flex flex-col gap-3">
-            <div class="flex items-center gap-2">
-              <input id="f-premium" type="checkbox" class="kt-checkbox"/>
-              <label for="f-premium">Premium</label>
+          <div class="grid gap-5">
+            <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+              <label class="kt-form-label flex items-center gap-1 max-w-56" for="f-premium">Premium</label>
+              <div class="grow flex items-center">
+                <input id="f-premium" type="checkbox" class="kt-checkbox"/>
+              </div>
             </div>
-            <div><label class="kt-form-label">Plan</label><input id="f-plan" class="kt-input"/></div>
-            <div><label class="kt-form-label">Kredi</label><input id="f-credits" type="number" class="kt-input"/></div>
+            <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+              <label class="kt-form-label flex items-center gap-1 max-w-56" for="f-plan">Plan</label>
+              <input id="f-plan" class="kt-input"/>
+            </div>
+            <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+              <label class="kt-form-label flex items-center gap-1 max-w-56" for="f-credits">Kredi</label>
+              <input id="f-credits" type="number" class="kt-input"/>
+            </div>
           </div>
         </div>
 
         <!-- Moderasyon -->
         <div class="user-panel hidden" data-tab="moderation">
-          <div class="flex flex-col gap-4">
-            <div class="flex items-center gap-3">
-              <span>Durum:</span>
-              <span id="f-status" class="kt-badge kt-badge-outline">—</span>
+          <div class="grid gap-5">
+            <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+              <label class="kt-form-label flex items-center gap-1 max-w-56">Durum</label>
+              <div class="grow">
+                <span id="f-status" class="kt-badge kt-badge-outline">—</span>
+              </div>
             </div>
             <div class="border border-border rounded-md p-4">
-              <h4 class="font-semibold mb-2">Ban</h4>
-              <textarea id="f-ban-reason" rows="2" class="kt-input mb-2" placeholder="Sebep"></textarea>
-              <label class="text-sm">Süre (ISO tarih, boş=permanent):</label>
-              <input id="f-ban-until" type="datetime-local" class="kt-input mb-3"/>
-              <div class="flex gap-2">
-                <button class="kt-btn kt-btn-warning" id="btn-ban">Banla</button>
-                <button class="kt-btn kt-btn-outline" id="btn-unban">Banı Kaldır</button>
+              <h4 class="font-semibold mb-4">Ban</h4>
+              <div class="grid gap-5">
+                <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+                  <label class="kt-form-label flex items-center gap-1 max-w-56" for="f-ban-reason">Sebep</label>
+                  <textarea id="f-ban-reason" rows="2" class="kt-input" placeholder="Ban sebebi"></textarea>
+                </div>
+                <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+                  <label class="kt-form-label flex items-center gap-1 max-w-56" for="f-ban-until">Süre</label>
+                  <div class="grow flex flex-col gap-1">
+                    <input id="f-ban-until" type="datetime-local" class="kt-input"/>
+                    <small class="text-xs text-muted-foreground">Boş bırakılırsa kalıcı ban uygulanır.</small>
+                  </div>
+                </div>
+                <div class="flex justify-end gap-2">
+                  <button class="kt-btn kt-btn-outline" id="btn-unban">Banı Kaldır</button>
+                  <button class="kt-btn kt-btn-warning" id="btn-ban">Banla</button>
+                </div>
               </div>
             </div>
             <div class="border border-destructive/30 rounded-md p-4 bg-destructive/5">
-              <h4 class="font-semibold text-destructive mb-2">Tehlikeli: Kullanıcı Silme</h4>
-              <p class="text-sm mb-2">Silmek için aşağıya <strong>SIL</strong> yazın:</p>
-              <input id="f-delete-confirm" class="kt-input mb-2" autocomplete="off"/>
-              <button class="kt-btn kt-btn-destructive" id="btn-delete" disabled>Kullanıcıyı Sil</button>
+              <h4 class="font-semibold text-destructive mb-4">Tehlikeli: Kullanıcı Silme</h4>
+              <div class="grid gap-5">
+                <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+                  <label class="kt-form-label flex items-center gap-1 max-w-56" for="f-delete-confirm">Onay</label>
+                  <div class="grow flex flex-col gap-1">
+                    <input id="f-delete-confirm" class="kt-input" autocomplete="off" placeholder="SIL"/>
+                    <small class="text-xs text-muted-foreground">Silmek için <strong>SIL</strong> yazın.</small>
+                  </div>
+                </div>
+                <div class="flex justify-end">
+                  <button class="kt-btn kt-btn-destructive" id="btn-delete" disabled>Kullanıcıyı Sil</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

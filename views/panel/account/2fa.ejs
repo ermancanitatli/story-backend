@@ -24,10 +24,14 @@
           <i class="ki-filled ki-shield-tick text-success"></i>
           <span>2FA şu anda aktif.</span>
         </p>
-        <form method="post" action="/panel/account/2fa/disable" class="flex flex-col gap-3">
-          <label class="kt-form-label">Devre dışı bırakmak için şifrenizi girin</label>
-          <input type="password" name="password" class="kt-input" placeholder="Mevcut şifre" required/>
-          <button type="submit" class="kt-btn kt-btn-destructive">Devre Dışı Bırak</button>
+        <form method="post" action="/panel/account/2fa/disable" class="grid gap-5">
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Mevcut Şifre</label>
+            <input type="password" name="password" class="kt-input" placeholder="Devre dışı bırakmak için şifreniz" required/>
+          </div>
+          <div class="flex justify-end">
+            <button type="submit" class="kt-btn kt-btn-destructive">Devre Dışı Bırak</button>
+          </div>
         </form>
       <% } else { %>
         <p class="mb-4 text-sm">Authenticator app (Google Authenticator, 1Password, Authy) ile QR kodu tarayın:</p>
@@ -37,10 +41,14 @@
         <% if (pendingSecret) { %>
           <p class="text-xs text-center mb-4 font-mono break-all">Manuel: <%= pendingSecret %></p>
         <% } %>
-        <form method="post" action="/panel/account/2fa/enable" class="flex flex-col gap-3">
-          <label class="kt-form-label">Uygulamadan 6 haneli kodu girin</label>
-          <input type="text" name="code" class="kt-input" placeholder="000000" maxlength="6" pattern="[0-9]{6}" required autocomplete="off" inputmode="numeric"/>
-          <button type="submit" class="kt-btn kt-btn-primary w-full">Doğrula ve Aktifleştir</button>
+        <form method="post" action="/panel/account/2fa/enable" class="grid gap-5">
+          <div class="flex items-baseline flex-wrap lg:flex-nowrap gap-2.5">
+            <label class="kt-form-label flex items-center gap-1 max-w-56">Doğrulama Kodu</label>
+            <input type="text" name="code" class="kt-input" placeholder="000000" maxlength="6" pattern="[0-9]{6}" required autocomplete="off" inputmode="numeric"/>
+          </div>
+          <div class="flex justify-end">
+            <button type="submit" class="kt-btn kt-btn-primary">Doğrula ve Aktifleştir</button>
+          </div>
         </form>
       <% } %>
     </div>
