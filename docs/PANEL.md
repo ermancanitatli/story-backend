@@ -80,3 +80,25 @@ Bakım: `npm run verify:indexes` — expected vs actual karşılaştırma.
 
 - CC-01 request-id middleware: her response X-Request-Id header'ı + JSON log'da reqId.
 - CC-17 Sentry (opsiyonel): `SENTRY_DSN` set edilirse.
+
+## Performance Audit
+
+### N+1 Query Audit
+
+Panel list endpoint'leri her request'te max 3 Mongo query yapmalı.
+
+Audit script:
+```bash
+npm run panel:profile
+```
+
+Mevcut durum (2026-04-19):
+| Endpoint | Query Count | Durum |
+|----------|-------------|-------|
+| `/panel/api/users` | 2 (find + count) | ✅ OK |
+| `/panel/api/stories` | 2 (find + count) | ✅ OK |
+| `/panel/api/notifications/history` | 1 (find) | ✅ OK |
+| `/panel/api/audit-logs` | 2 (find + count) | ✅ OK |
+| `/panel/api/users/:id` | 4 (user + friendships + sessions + count) | ⚠️ Sınırda — getUserDetail parallel Promise.all kullanıyor, I/O paralel |
+
+Liste endpoint'leri `populate()` kullanmıyor, N+1 yok. Detail endpoint parallel promise ile 4 query yapıyor ama sequential olmadığından kabul edilebilir.
