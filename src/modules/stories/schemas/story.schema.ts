@@ -67,6 +67,13 @@ export class StoryChapter {
 
   @Prop({ type: [MediaItem] })
   mediaItems?: MediaItem[];
+
+  // Legacy Firestore format — readonly, migration sonrası kaldırılacak
+  @Prop({ type: Object })
+  mediaAssets?: {
+    videos?: Array<{ url: string; thumbnail?: string; order?: number }>;
+    images?: Array<{ url: string; thumbnail?: string; order?: number; hidden?: boolean }>;
+  };
 }
 
 @Schema({ _id: false })
