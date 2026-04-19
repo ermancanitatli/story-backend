@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'partial';
+export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'partial' | 'cancelled';
 
 @Schema({ timestamps: true, collection: 'notification_history' })
 export class NotificationHistory extends Document {
@@ -41,8 +41,14 @@ export class NotificationHistory extends Document {
   @Prop({ type: Object })
   oneSignalResponseRaw?: any;
 
-  @Prop({ enum: ['pending', 'sent', 'failed', 'partial'], default: 'pending' })
+  @Prop({
+    enum: ['pending', 'sent', 'failed', 'partial', 'cancelled'],
+    default: 'pending',
+  })
   status: NotificationStatus;
+
+  @Prop()
+  scheduledFor?: Date;
 
   @Prop()
   successCount?: number;

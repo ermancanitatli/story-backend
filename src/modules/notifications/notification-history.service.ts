@@ -25,4 +25,8 @@ export class NotificationHistoryService {
   async list(limit = 50): Promise<NotificationHistory[]> {
     return this.historyModel.find().sort({ createdAt: -1 }).limit(limit).exec();
   }
+
+  async getById(id: string): Promise<NotificationHistory | null> {
+    return this.historyModel.findById(id).exec();
+  }
 }

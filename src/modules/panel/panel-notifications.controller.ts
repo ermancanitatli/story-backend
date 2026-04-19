@@ -2,8 +2,11 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Logger,
+  NotFoundException,
+  Param,
   Post,
   Query,
   Req,
@@ -58,6 +61,18 @@ export class PanelNotificationsController {
       throw new BadRequestException('EN headings/contents required');
     }
 
+    let scheduledFor: Date | undefined;
+    if (dto.sendAt) {
+      const when = new Date(dto.sendAt);
+      if (Number.isNaN(when.getTime())) {
+        throw new BadRequestException('sendAt geçerli ISO8601 olmalı');
+      }
+      if (when.getTime() <= Date.now()) {
+        throw new BadRequestException('sendAt gelecekte olmalı');
+      }
+      scheduledFor = when;
+    }
+
     const adminId = req.session?.adminId || 'unknown';
     const adminUsername = req.session?.username || 'unknown';
 
@@ -80,6 +95,7 @@ export class PanelNotificationsController {
       data: dto.data,
       estimatedRecipients: count,
       status: 'pending',
+      scheduledFor,
     });
 
     this.logger.log(
@@ -95,13 +111,19 @@ export class PanelNotificationsController {
         bigPicture: dto.bigPicture,
         url: dto.url,
         data: dto.data,
+        sendAfter: dto.sendAt,
       });
 
+      // Zamanlanmış gönderimde OneSignal notification id döner ama durum
+      // gerçekte "scheduled" — DB'de 'pending' tutup scheduledFor ile
+      // ayırt ediyoruz. Anlık gönderim ise 'sent' olur.
+      const nextStatus = scheduledFor ? 'pending' : 'sent';
+
       await this.historyService.updateStatus(history._id.toString(), {
-        status: 'sent',
+        status: nextStatus,
         oneSignalNotificationId: response.id,
         oneSignalResponseRaw: response as any,
-        successCount: response.recipients,
+        successCount: scheduledFor ? undefined : response.recipients,
       });
 
       return {
@@ -109,6 +131,7 @@ export class PanelNotificationsController {
         estimatedRecipients: count,
         oneSignalId: response.id,
         recipients: response.recipients,
+        scheduledFor: scheduledFor ?? null,
       };
     } catch (err) {
       const message = (err as Error).message;
@@ -128,5 +151,51 @@ export class PanelNotificationsController {
     const parsed = parseInt(limit || '50', 10);
     const lim = Math.min(Number.isFinite(parsed) ? parsed : 50, 200);
     return this.historyService.list(lim);
+  }
+
+  /**
+   * Zamanlanmış (scheduled) broadcast iptali — OneSignal notification DELETE.
+   * Sadece pending + oneSignalNotificationId olan kayıtlar iptal edilebilir.
+   */
+  @Delete('history/:id')
+  async cancel(@Param('id') id: string) {
+    const history = await this.historyService.getById(id);
+    if (!history) {
+      throw new NotFoundException('History kaydı bulunamadı');
+    }
+    if (history.status !== 'pending' || !history.oneSignalNotificationId) {
+      throw new BadRequestException(
+        'Zamanlanmış gönderim değil veya iptal edilemez',
+      );
+    }
+
+    const appId = process.env.ONESIGNAL_APP_ID;
+    const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+    if (!appId || !apiKey) {
+      throw new BadRequestException('OneSignal credentials missing');
+    }
+
+    const url = `https://onesignal.com/api/v1/notifications/${history.oneSignalNotificationId}?app_id=${appId}`;
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: { Authorization: `Basic ${apiKey}` },
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      this.logger.warn(
+        `OneSignal cancel failed historyId=${id} status=${res.status} body=${body}`,
+      );
+      throw new BadRequestException(
+        `OneSignal iptal başarısız (${res.status})`,
+      );
+    }
+
+    await this.historyService.updateStatus(id, {
+      status: 'cancelled' as any,
+    });
+
+    this.logger.log(`Scheduled broadcast cancelled historyId=${id}`);
+    return { cancelled: true };
   }
 }
