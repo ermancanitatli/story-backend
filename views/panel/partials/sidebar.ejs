@@ -16,8 +16,8 @@
 >
   <div class="kt-sidebar-header hidden lg:flex items-center relative justify-between px-3 lg:px-6 shrink-0" id="sidebar_header">
     <a href="/panel" class="flex items-center gap-2">
-      <img src="/panel-assets/media/app/default-logo.svg" class="h-[28px] dark:hidden" alt="Story Admin" />
-      <img src="/panel-assets/media/app/default-logo-dark.svg" class="h-[28px] hidden dark:block" alt="Story Admin" />
+      <span class="text-xl font-bold text-primary">Story</span>
+      <span class="text-xl font-semibold text-mono">Admin</span>
     </a>
     <button class="kt-btn kt-btn-outline kt-btn-icon size-[30px] absolute start-full top-2/4 -translate-x-2/4 -translate-y-2/4 rtl:translate-x-2/4" id="sidebar_toggle" data-kt-toggle="body" data-kt-toggle-class="kt-sidebar-collapse">
       <i class="ki-filled ki-exit-left"></i>
@@ -48,12 +48,6 @@
         <a class="kt-menu-link" href="/panel/notifications">
           <span class="kt-menu-icon"><i class="ki-filled ki-notification-bing"></i></span>
           <span class="kt-menu-title">Bildirimler</span>
-        </a>
-      </div>
-      <div class="kt-menu-item <%= isSettings ? 'kt-menu-item-active' : '' %>">
-        <a class="kt-menu-link" href="/panel/settings">
-          <span class="kt-menu-icon"><i class="ki-filled ki-setting-2"></i></span>
-          <span class="kt-menu-title">Ayarlar</span>
         </a>
       </div>
       <div class="kt-menu-item <%= isAudit ? 'kt-menu-item-active' : '' %>">
