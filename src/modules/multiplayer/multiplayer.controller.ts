@@ -158,21 +158,38 @@ export class MultiplayerController {
     const progress = await this.multiplayerService.getLatestProgress(id);
     if (!progress) return null;
 
-    // Çift dilli progress ise kullanıcının diline göre lokalize et
-    if (progress.scenes) {
+    // Multi-perspective veya bilingual progress ise kullanıcının rolüne/diline göre lokalize et
+    const scenesObj = (progress as any).scenes;
+    if (scenesObj) {
       const session = await this.multiplayerService.getSession(id);
       const isHost = session.hostId.toString() === user.sub;
       const lang = isHost
-        ? (session.hostLanguageCode || 'en')
-        : (session.guestLanguageCode || 'en');
+        ? session.hostLanguageCode || 'en'
+        : session.guestLanguageCode || 'en';
 
-      const plain = typeof (progress as any).toObject === 'function'
-        ? (progress as any).toObject()
-        : { ...progress };
-      plain.currentScene = progress.scenes[lang] || Object.values(progress.scenes)[0] || progress.currentScene;
-      plain.choices = (progress as any).localizedChoices?.[lang]
-        || Object.values((progress as any).localizedChoices || {})[0]
-        || progress.choices;
+      const plain =
+        typeof (progress as any).toObject === 'function'
+          ? (progress as any).toObject()
+          : { ...progress };
+
+      // 1) Same-language dual perspective → scenes.host / scenes.guest
+      if (scenesObj.host || scenesObj.guest) {
+        plain.currentScene =
+          (isHost ? scenesObj.host : scenesObj.guest) ||
+          scenesObj.host ||
+          scenesObj.guest ||
+          progress.currentScene;
+      } else {
+        // 2) Bilingual → scenes[lang]
+        plain.currentScene =
+          scenesObj[lang] || Object.values(scenesObj)[0] || progress.currentScene;
+      }
+
+      plain.choices =
+        (progress as any).localizedChoices?.[lang] ||
+        Object.values((progress as any).localizedChoices || {})[0] ||
+        progress.choices;
+
       delete plain.scenes;
       delete plain.localizedChoices;
       return plain;

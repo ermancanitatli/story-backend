@@ -98,6 +98,10 @@ export interface PromptParams {
   hostName?: string;
   guestName?: string;
   activePlayerName?: string;
+  // Multiplayer'da aynı dilde olsalar bile her oyuncu kendi gözünden sahne görmeli.
+  // true: response'ta scenes.host + scenes.guest ayrı perspective ile döner (tek dil).
+  // false: tek sahne currentScene'e yazılır (non-multiplayer).
+  requireDualPerspectiveSameLang?: boolean;
 
   // === Chapter transition controls ===
   // 'entering': chapter boundary'yi geçip yeni chapter'ın ilk sahnesini üretirken kullanılır.
@@ -339,8 +343,46 @@ Example — if ${activeName} just chose to say "Focus on your breath" to the oth
 - Do NOT write both scenes from the same perspective.
 - Do NOT say "You" referring to the same person in both languages — "you" switches based on the scene's owner.
 - Do NOT use original story character names — only "${hostN}" and "${guestN}".`;
+    } else if (params.requireDualPerspectiveSameLang) {
+      // SAME-LANGUAGE multiplayer — iki oyuncu aynı dilde ama iki ayrı perspective gerekli
+      const lang = languages[0];
+      prompt += `
+
+## Multiplayer Mode — SAME-LANGUAGE DUAL PERSPECTIVE (CRITICAL):
+- Host (player 1): ${hostN}
+- Guest (player 2): ${guestN}
+- **Both play in ${getLanguageName(lang)}.**
+- **ACTIVE PLAYER this turn: ${activeName}** — their choice drives what happens.
+- Both are REAL players who REPLACE the story's original characters. NEVER use original names.
+
+### CRITICAL: scenes field must contain TWO DIFFERENT perspectives of the SAME event, BOTH in ${getLanguageName(lang)}.
+
+- \`scenes.host\` → written from **${hostN}'s** POV in ${getLanguageName(lang)} ("sen" = ${hostN}, ${guestN} = 3rd person).
+- \`scenes.guest\` → written from **${guestN}'s** POV in ${getLanguageName(lang)} ("sen" = ${guestN}, ${hostN} = 3rd person).
+
+They describe the SAME moment, but through each player's own eyes.
+
+Example — if ${activeName} chose "Esra'nın belini düzelt":
+
+  scenes.host (${hostN}'s view):
+    ${activeName === hostN
+      ? `"${guestN}'a yaklaşıyorsun ve nazikçe belini düzeltiyorsun. ${guestN} sana dönüp gülümsüyor, 'Teşekkürler' diyor."`
+      : `"${guestN} sana yaklaşıyor ve nazikçe belini düzeltiyor. Sen ona dönüp gülümsüyorsun, 'Teşekkürler' diyorsun."`}
+
+  scenes.guest (${guestN}'s view):
+    ${activeName === guestN
+      ? `"${hostN}'a yaklaşıyorsun ve nazikçe belini düzeltiyorsun. ${hostN} sana dönüp gülümsüyor, 'Teşekkürler' diyor."`
+      : `"${hostN} sana yaklaşıyor ve nazikçe belini düzeltiyor. Sen ona dönüp gülümsüyorsun, 'Teşekkürler' diyorsun."`}
+
+### Choices (4 total, SAME for both — next player's action options):
+- \`choices\` → array of 4 choices in ${getLanguageName(lang)}.
+
+### Absolute rules:
+- scenes.host and scenes.guest MUST describe the same event from different POVs — NOT identical text.
+- "sen" switches based on which scene's owner.
+- NEVER use original story character names.`;
     } else {
-      // SINGLE LANGUAGE multiplayer — sadece aktif oyuncunun dili
+      // SINGLE LANGUAGE multiplayer — sadece aktif oyuncunun dili (eski davranış, nadir kullanım)
       prompt += `
 
 ## Multiplayer Mode — PERSPECTIVE RULES (CRITICAL):
@@ -373,7 +415,35 @@ Before composing currentScene, populate \`acknowledged_directive\` with ONE sent
   }
 
   // === RESPONSE FORMAT ===
-  if (isBilingual) {
+  if (!isBilingual && params.requireDualPerspectiveSameLang) {
+    const lang = languages[0];
+    prompt += `
+
+## Response Format (JSON):
+{
+  "scene_type": "${isTransition ? 'chapter_transition' : 'continuation'}",
+  "acknowledged_directive": "${isTransition ? 'REQUIRED: one-sentence restatement of director directive in English' : 'optional'}",
+  "scenes": {
+    "host": "scene from HOST's POV in ${getLanguageName(lang)} (host is 'sen')",
+    "guest": "scene from GUEST's POV in ${getLanguageName(lang)} (guest is 'sen'); SAME EVENT, DIFFERENT PERSPECTIVE — NOT identical text"
+  },
+  "choices": [
+    {"id": "1", "text": "NEXT active player's action in ${getLanguageName(lang)}", "type": "action"},
+    {"id": "2", "text": "...", "type": "dialogue"},
+    {"id": "3", "text": "...", "type": "exploration"},
+    {"id": "4", "text": "...", "type": "decision"}
+  ],
+  "effects": {
+    "itemsGained": [],
+    "itemsLost": [],
+    "relationshipChanges": {},
+    "emotionalChanges": {"intimacy":0,"anger":0,"worry":0,"trust":0,"excitement":0,"sadness":0},
+    "suggestChapterTransition": false
+  },
+  "isEnding": false,
+  "endingType": null
+}`;
+  } else if (isBilingual) {
     const l0 = languages[0];
     const l1 = languages[1];
     prompt += `

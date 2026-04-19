@@ -108,10 +108,12 @@ export class MultiplayerService {
   private async generateInitialScene(session: MultiplayerSession): Promise<void> {
     const clone = session.storyClone || {};
 
-    const isBilingual = session.hostLanguageCode !== session.guestLanguageCode;
-    const languages = isBilingual
-      ? [session.hostLanguageCode || 'en', session.guestLanguageCode || 'en']
-      : [session.hostLanguageCode || 'en'];
+    const hostLang = session.hostLanguageCode || 'en';
+    const guestLang = session.guestLanguageCode || 'en';
+    // Bilingual = 2 farklı dil (aynı dil ise tek languages list'i).
+    // Dual perspective ayrı bir kavram — multiplayer'da her zaman aktif.
+    const isBilingual = hostLang !== guestLang;
+    const languages = isBilingual ? [hostLang, guestLang] : [hostLang];
 
     const systemPrompt = buildSystemPrompt({
       storyTitle: clone.title || 'Interactive Story',
@@ -125,6 +127,7 @@ export class MultiplayerService {
       guestName: session.guestName,
       activePlayerName: session.hostName,
       languages,
+      requireDualPerspectiveSameLang: !isBilingual, // aynı dilde de dual perspective
     });
     const userMessage = buildUserMessage({ type: 'start', userChoice: '', recentHistory: [] });
 
@@ -137,18 +140,30 @@ export class MultiplayerService {
     let localizedChoices: Record<string, any> | undefined;
 
     if (grokResponse.scenes) {
-      // Çift dilli response
-      scenes = grokResponse.scenes;
-      // Her dilin choices'ını normalize et
-      const rawLC = grokResponse.localizedChoices || {};
-      localizedChoices = {};
-      for (const lang of Object.keys(rawLC)) {
-        localizedChoices[lang] = this.normalizeChoices(rawLC[lang]);
+      const sceneKeys = Object.keys(grokResponse.scenes);
+      const isDualPerspective =
+        sceneKeys.includes('host') && sceneKeys.includes('guest');
+
+      if (isDualPerspective) {
+        // Same-language dual perspective: scenes.host + scenes.guest
+        scenes = grokResponse.scenes; // {host: "...", guest: "..."}
+        // choices tek array (her iki oyuncu aynı dili kullanıyor)
+        choicesData = grokResponse.choices || [];
+        // Fallback currentScene — host view (ilk turn host aktif)
+        sceneText = grokResponse.scenes.host || grokResponse.scenes.guest || '';
+      } else {
+        // Bilingual — scenes[hostLang] + scenes[guestLang]
+        scenes = grokResponse.scenes;
+        const rawLC = grokResponse.localizedChoices || {};
+        localizedChoices = {};
+        for (const lang of Object.keys(rawLC)) {
+          localizedChoices[lang] = this.normalizeChoices(rawLC[lang]);
+        }
+        sceneText = grokResponse.scenes[languages[0]] || Object.values(grokResponse.scenes)[0] || '';
+        choicesData = localizedChoices[languages[0]] || Object.values(localizedChoices)[0] || [];
       }
-      sceneText = grokResponse.scenes[languages[0]] || Object.values(grokResponse.scenes)[0] || '';
-      choicesData = localizedChoices[languages[0]] || Object.values(localizedChoices)[0] || [];
     } else {
-      // Tek dilli response
+      // Tek dilli, tek perspective (nadir durum)
       sceneText = grokResponse.currentScene || '';
       choicesData = grokResponse.choices || [];
     }
@@ -325,6 +340,7 @@ export class MultiplayerService {
       activePlayerName:
         userId === session.hostId?.toString() ? session.hostName : session.guestName,
       languages,
+      requireDualPerspectiveSameLang: !isBilingual,
       rollingSummary: tierRollingSummary,
       chapterBridges: tierChapterBridges,
       recentHistory,
@@ -403,22 +419,31 @@ export class MultiplayerService {
       }
     }
 
-    // Çift dilli response normalize et
+    // Response normalize — dual perspective / bilingual / single
     let sceneText: string;
     let choicesArr: any;
     let scenes: Record<string, string> | undefined;
     let localizedChoices: Record<string, any> | undefined;
 
     if (grokResponse.scenes) {
-      scenes = grokResponse.scenes;
-      // Her dilin choices'ını normalize et
-      const rawLC = grokResponse.localizedChoices || {};
-      localizedChoices = {};
-      for (const lang of Object.keys(rawLC)) {
-        localizedChoices[lang] = this.normalizeChoices(rawLC[lang]);
+      const sceneKeys = Object.keys(grokResponse.scenes);
+      const isDualPerspective =
+        sceneKeys.includes('host') && sceneKeys.includes('guest');
+
+      if (isDualPerspective) {
+        scenes = grokResponse.scenes;
+        choicesArr = grokResponse.choices || [];
+        sceneText = grokResponse.scenes.host || grokResponse.scenes.guest || '';
+      } else {
+        scenes = grokResponse.scenes;
+        const rawLC = grokResponse.localizedChoices || {};
+        localizedChoices = {};
+        for (const lang of Object.keys(rawLC)) {
+          localizedChoices[lang] = this.normalizeChoices(rawLC[lang]);
+        }
+        sceneText = grokResponse.scenes[languages[0]] || Object.values(grokResponse.scenes)[0] || '';
+        choicesArr = localizedChoices[languages[0]] || Object.values(localizedChoices)[0] || [];
       }
-      sceneText = grokResponse.scenes[languages[0]] || Object.values(grokResponse.scenes)[0] || '';
-      choicesArr = localizedChoices[languages[0]] || Object.values(localizedChoices)[0] || [];
     } else {
       sceneText = grokResponse.currentScene || '';
       choicesArr = grokResponse.choices || [];
