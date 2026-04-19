@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Param, Body } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { StorySessionsService } from './story-sessions.service';
 import { CreateSessionDto } from './dto/create-session.dto';
@@ -50,5 +50,25 @@ export class StorySessionsController {
     @Body() dto: SubmitChoiceDto,
   ) {
     return this.sessionsService.submitChoice(user.sub, id, dto);
+  }
+
+  @Delete('batch')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Batch delete sessions (ids in body, or all if empty)' })
+  async batchDelete(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { ids?: string[]; all?: boolean },
+  ) {
+    return this.sessionsService.batchDelete(user.sub, body.ids, body.all === true);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete a session and its progresses' })
+  async deleteSession(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseObjectIdPipe) id: string,
+  ) {
+    return this.sessionsService.deleteSession(user.sub, id);
   }
 }

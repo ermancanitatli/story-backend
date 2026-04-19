@@ -137,6 +137,56 @@ export class StorySessionsService {
   }
 
   /**
+   * Tek session ve progress'lerini sil.
+   */
+  async deleteSession(userId: string, sessionId: string): Promise<{ deleted: number }> {
+    const objectId = new Types.ObjectId(sessionId);
+    const result = await this.sessionModel.deleteOne({
+      _id: objectId,
+      userId: new Types.ObjectId(userId),
+    });
+    if (result.deletedCount === 0) {
+      throw new NotFoundException('Session not found');
+    }
+    await this.progressModel.deleteMany({ sessionId: objectId });
+    return { deleted: result.deletedCount };
+  }
+
+  /**
+   * Birden fazla session'ı veya tamamını sil.
+   */
+  async batchDelete(
+    userId: string,
+    ids?: string[],
+    all: boolean = false,
+  ): Promise<{ deleted: number }> {
+    const userObjectId = new Types.ObjectId(userId);
+
+    if (all) {
+      const sessions = await this.sessionModel.find({ userId: userObjectId }).select('_id').exec();
+      const sessionIds = sessions.map((s) => s._id);
+      if (sessionIds.length === 0) return { deleted: 0 };
+
+      await this.progressModel.deleteMany({ sessionId: { $in: sessionIds } });
+      const result = await this.sessionModel.deleteMany({ userId: userObjectId });
+      return { deleted: result.deletedCount };
+    }
+
+    if (!ids || ids.length === 0) return { deleted: 0 };
+
+    const objectIds = ids.map((id) => new Types.ObjectId(id));
+    await this.progressModel.deleteMany({
+      sessionId: { $in: objectIds },
+      userId: userObjectId,
+    });
+    const result = await this.sessionModel.deleteMany({
+      _id: { $in: objectIds },
+      userId: userObjectId,
+    });
+    return { deleted: result.deletedCount };
+  }
+
+  /**
    * Grok API çağrıs�� yap ve progress kaydet.
    */
   private async processStoryRequest(params: {
