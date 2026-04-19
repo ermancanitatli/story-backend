@@ -154,6 +154,15 @@ export class Story extends Document {
   tags: string[];
 
   @Prop()
+  difficulty?: string; // 'easy' | 'medium' | 'hard' vb.
+
+  @Prop()
+  ageRating?: string; // '7+', '13+', '18+' vb.
+
+  @Prop({ default: 0 })
+  readCount: number;
+
+  @Prop()
   legacyFirestoreId?: string; // Geçiş dönemi — eski Firestore doc ID
 }
 
