@@ -12101,7 +12101,7 @@
   pointer-events: none;
   z-index: 1;
 }
-.kt-input {
+div.kt-input[data-kt-toggle-password="true"], div.kt-input[data-kt-color-picker="true"] {
   position: relative;
   display: flex;
   align-items: center;
