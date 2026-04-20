@@ -83,6 +83,38 @@ export class StorySession extends Document {
     text: string;
     updatedAtStep: number;
   };
+
+  // === Dramatic state vector (3 AI uzman önerisi) ===
+  // AI her turn kendi günceller; backend prompt'a sonraki turn'de enjekte eder.
+  // 0-1 arası normalize. Boş string/0 = henüz ölçülmedi.
+  @Prop({
+    type: Object,
+    default: () => ({
+      tension: 0.2,
+      stakes: 0.2,
+      agency: 0.7,
+      mystery: 0.3,
+      intimacy: 0.2,
+      danger: 0.1,
+      turnsSinceDisruption: 0,
+      dominantEmotion: '',
+    }),
+  })
+  dramaState?: {
+    tension: number;
+    stakes: number;
+    agency: number;
+    mystery: number;
+    intimacy: number;
+    danger: number;
+    turnsSinceDisruption: number;
+    dominantEmotion: string;
+  };
+
+  // Son N turn'de AI'ın kullandığı beat/flavor/disruptor — recency avoidance.
+  @Prop({ type: [String], default: [] }) recentBeats?: string[];
+  @Prop({ type: [String], default: [] }) recentFlavors?: string[];
+  @Prop({ type: [String], default: [] }) recentDisruptors?: string[];
 }
 
 export const StorySessionSchema = SchemaFactory.createForClass(StorySession);

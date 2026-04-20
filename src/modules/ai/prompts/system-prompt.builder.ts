@@ -131,6 +131,22 @@ export interface PromptParams {
   // Son chapter — transition/kapanış baskısı YOK, hikaye sonsuz devam etsin
   isLastChapter?: boolean;
   totalChapters?: number;
+
+  // === Dramatic state (3 uzman oybirliği) ===
+  dramaState?: {
+    tension?: number;
+    stakes?: number;
+    agency?: number;
+    mystery?: number;
+    intimacy?: number;
+    danger?: number;
+    turnsSinceDisruption?: number;
+    dominantEmotion?: string;
+  };
+  recentBeats?: string[];
+  recentFlavors?: string[];
+  recentDisruptors?: string[];
+  chapterProgress?: number; // 0-1 arası
 }
 
 /**
@@ -247,7 +263,19 @@ The 4 choices are the player's next-turn action menu. Follow these rules strictl
 - **3 of the 4 choices** must AMPLIFY the player's dominant trajectory (see USER TRAJECTORY in the user message). They deepen, escalate, or explore the thematic direction the player has been pursuing — in varied ways (e.g. escalate intensity vs. turn inward vs. broaden scope). When the trajectory is clear, lean HARDER into it each turn.
 - **1 of the 4 choices** MUST be an ALTERNATIVE DIRECTION — a plausible, in-character option that steps aside from the dominant trajectory and opens a different thematic path. This is the player's exit ramp to reshape the story. It must feel natural, never forced.
 - Do NOT label, tag, or annotate which choice is amplify vs. alternative. The player sees only the action text.
-- When the user's intent is clear (e.g. pursuit, retreat, curiosity, confrontation), let the currentScene's details (sensory, emotional, environmental) respond to that pull — the world should feel like it is bending toward what the player wants.`;
+- When the user's intent is clear (e.g. pursuit, retreat, curiosity, confrontation), let the currentScene's details (sensory, emotional, environmental) respond to that pull — the world should feel like it is bending toward what the player wants.
+
+## 🎭 Dramatic discipline (every scene MUST turn — no filler, no status quo)
+1. **Scene must turn**: every currentScene ends in a different emotional/situational state than it started. If START_STATE == END_STATE, the scene has failed.
+2. **Axis mandate**: every scene must enact at least ONE of {location_shift, relationship_delta, knowledge_gain, stakes_raise, character_reveal, external_pressure}. Fill axis_touched accordingly.
+3. **Beat & flavor self-selection with recency avoidance**:
+   - Pick a **beat** from: [setup, inciting, rising, midpoint, escalation, climax, resolution, breather].
+   - Pick a **flavor** from: [revelation, conflict, intimacy, suspicion, humor, silence, wonder, dread, tenderness, reckoning, absurdity].
+   - Recent beats/flavors used in the last 3-4 turns are listed in the user message as FORBIDDEN — avoid them unless no alternative fits narratively.
+4. **Disruptor on flat streaks**: if state alerts (user message) indicate flat tension or long stretch since last disruption, set \`disruptor\` to one of [interrupting_character, unexpected_news, environmental_shift, revelation, time_jump, emotional_eruption, physical_mishap, outsider_pov, sensory_intrusion, object_malfunction, memory_flash, betrayal_seed] (never 'none') — and let it reshape the scene as a real event, not decoration.
+5. **Earned disruption**: any disruptor must follow from established stakes and trajectory — not random catastrophe.
+6. **Consequence-bearing beats**: characters must want INCOMPATIBLE things this turn. Nobody leaves unchanged. Prefer concrete reveal/reversal/intrusion over gentle continuation.
+7. **State tracking**: always emit state_after with your own 0-1 estimates for tension/stakes/agency/mystery/intimacy/danger + a dominantEmotion word.`;
 
   // === CHAPTER PACING INSTRUCTIONS ===
   if (params.isLastChapter) {
@@ -450,6 +478,11 @@ Before composing currentScene, populate \`acknowledged_directive\` with ONE sent
   "active_player_confirmation": "MUST equal active player's literal name (proof of awareness)",
   "host_pov_you_refers_to": "MUST equal host's literal name (in scenes.host, 'sen' refers to this person)",
   "guest_pov_you_refers_to": "MUST equal guest's literal name (in scenes.guest, 'sen' refers to this person)",
+  "beat": "one of [setup|inciting|rising|midpoint|escalation|climax|resolution|breather]",
+  "flavor": "one of [revelation|conflict|intimacy|suspicion|humor|silence|wonder|dread|tenderness|reckoning|absurdity]",
+  "disruptor": "one of [none|interrupting_character|unexpected_news|environmental_shift|revelation|time_jump|emotional_eruption|physical_mishap|outsider_pov|sensory_intrusion|object_malfunction|memory_flash|betrayal_seed]",
+  "axis_touched": "one of [location_shift|relationship_delta|knowledge_gain|stakes_raise|character_reveal|external_pressure]",
+  "state_after": {"tension":0-1,"stakes":0-1,"agency":0-1,"mystery":0-1,"intimacy":0-1,"danger":0-1,"dominantEmotion":"word"},
   "scenes": {
     "host": "scene from HOST's POV in ${getLanguageName(lang)} (host is 'sen', 3-5 sentences)",
     "guest": "scene from GUEST's POV in ${getLanguageName(lang)} (guest is 'sen', 3-5 sentences); SAME EVENT, DIFFERENT PERSPECTIVE — NOT identical text"
@@ -479,6 +512,11 @@ Before composing currentScene, populate \`acknowledged_directive\` with ONE sent
 {
   "scene_type": "${isTransition ? 'chapter_transition' : 'continuation'}",
   "acknowledged_directive": "${isTransition ? 'REQUIRED: one-sentence restatement of director directive in English' : 'optional'}",
+  "beat": "one of [setup|inciting|rising|midpoint|escalation|climax|resolution|breather]",
+  "flavor": "one of [revelation|conflict|intimacy|suspicion|humor|silence|wonder|dread|tenderness|reckoning|absurdity]",
+  "disruptor": "one of [none|interrupting_character|unexpected_news|environmental_shift|revelation|time_jump|emotional_eruption|physical_mishap|outsider_pov|sensory_intrusion|object_malfunction|memory_flash|betrayal_seed]",
+  "axis_touched": "one of [location_shift|relationship_delta|knowledge_gain|stakes_raise|character_reveal|external_pressure]",
+  "state_after": {"tension":0-1,"stakes":0-1,"agency":0-1,"mystery":0-1,"intimacy":0-1,"danger":0-1,"dominantEmotion":"word"},
   "scenes": {
     "${l0}": "scene from FIRST player's POV in ${getLanguageName(l0)} (they are 'you')",
     "${l1}": "scene from SECOND player's POV in ${getLanguageName(l1)} (they are 'you'); SAME EVENT, DIFFERENT PERSPECTIVE — NOT a translation"
@@ -514,6 +552,11 @@ Before composing currentScene, populate \`acknowledged_directive\` with ONE sent
 {
   "scene_type": "${isTransition ? 'chapter_transition' : 'continuation'}",
   "acknowledged_directive": "${isTransition ? 'REQUIRED: one-sentence restatement of director directive in English' : 'optional'}",
+  "beat": "one of [setup|inciting|rising|midpoint|escalation|climax|resolution|breather]",
+  "flavor": "one of [revelation|conflict|intimacy|suspicion|humor|silence|wonder|dread|tenderness|reckoning|absurdity]",
+  "disruptor": "one of [none|interrupting_character|unexpected_news|environmental_shift|revelation|time_jump|emotional_eruption|physical_mishap|outsider_pov|sensory_intrusion|object_malfunction|memory_flash|betrayal_seed]",
+  "axis_touched": "one of [location_shift|relationship_delta|knowledge_gain|stakes_raise|character_reveal|external_pressure]",
+  "state_after": {"tension":0-1,"stakes":0-1,"agency":0-1,"mystery":0-1,"intimacy":0-1,"danger":0-1,"dominantEmotion":"word"},
   "currentScene": "string",
   "choices": [
     {"id": "1", "text": "string", "type": "action|dialogue|exploration|decision"},
@@ -560,6 +603,21 @@ export function buildUserMessage(params: {
   // === User trajectory — intent amplification ===
   // Son N kullanıcı seçiminin text'i, en eski → en yeni. Boş bırakılırsa blok render edilmez.
   recentUserChoices?: string[];
+  // === Dramatic state (3 uzman oybirliği) ===
+  dramaState?: {
+    tension?: number;
+    stakes?: number;
+    agency?: number;
+    mystery?: number;
+    intimacy?: number;
+    danger?: number;
+    turnsSinceDisruption?: number;
+    dominantEmotion?: string;
+  };
+  recentBeats?: string[];
+  recentFlavors?: string[];
+  recentDisruptors?: string[];
+  chapterProgress?: number; // 0-1
 }): string {
   if (params.type === 'start') {
     return 'Begin the story. Set the scene and present the first set of choices.';
@@ -591,6 +649,69 @@ export function buildUserMessage(params: {
           : '## Recent story context:';
       message += `${tierLabel}\n${params.recentHistory.join('\n')}\n\n`;
     }
+  }
+
+  // === DRAMATIC STATE snapshot + backend-computed alerts ===
+  const ds = params.dramaState;
+  if (ds && (ds.tension !== undefined || ds.turnsSinceDisruption !== undefined)) {
+    const snap = [
+      `tension=${ds.tension ?? '?'}`,
+      `stakes=${ds.stakes ?? '?'}`,
+      `agency=${ds.agency ?? '?'}`,
+      `mystery=${ds.mystery ?? '?'}`,
+      `intimacy=${ds.intimacy ?? '?'}`,
+      `danger=${ds.danger ?? '?'}`,
+      `turnsSinceDisruption=${ds.turnsSinceDisruption ?? 0}`,
+      ds.dominantEmotion ? `dominantEmotion=${ds.dominantEmotion}` : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
+    message += `## DRAMATIC STATE\n${snap}\n\n`;
+    // Alerts
+    const alerts: string[] = [];
+    const t = ds.tension ?? 0.3;
+    const tsd = ds.turnsSinceDisruption ?? 0;
+    const stakes = ds.stakes ?? 0.3;
+    const agency = ds.agency ?? 0.7;
+    const intimacy = ds.intimacy ?? 0.3;
+    const mystery = ds.mystery ?? 0.3;
+    const danger = ds.danger ?? 0.1;
+    if (t < 0.4 && tsd >= 2) alerts.push(`tension<0.4 AND ${tsd} turns since disruption → MANDATORY disruptor this turn (not 'none').`);
+    if (intimacy > 0.7 && mystery < 0.3) alerts.push(`intimacy>0.7 AND mystery<0.3 → scene drifting to comfort; introduce external pressure or hidden info.`);
+    if (agency < 0.3) alerts.push(`agency<0.3 → player feels passive; force a choice with meaningful consequences.`);
+    if (intimacy > 0.75 && stakes < 0.3) alerts.push(`high intimacy + low stakes → seed a complication/betrayal.`);
+    const spread = Math.max(t, stakes, mystery, intimacy, danger, agency) - Math.min(t, stakes, mystery, intimacy, danger, agency);
+    if (spread < 0.2) alerts.push(`state vector is flat → inject variety: shift ≥2 axes by ≥0.2.`);
+    if (alerts.length > 0) message += `## STATE ALERTS\n${alerts.map((a) => `- ${a}`).join('\n')}\n\n`;
+  }
+
+  // RECENCY AVOIDANCE
+  const rBeats = (params.recentBeats || []).filter(Boolean);
+  const rFlavors = (params.recentFlavors || []).filter(Boolean);
+  const rDisruptors = (params.recentDisruptors || []).filter((d) => d && d !== 'none');
+  if (rBeats.length || rFlavors.length || rDisruptors.length) {
+    message += `## RECENCY AVOIDANCE (do not repeat)\n`;
+    if (rBeats.length) message += `- Recent beats used: ${rBeats.join(', ')} — pick a different beat.\n`;
+    if (rFlavors.length) message += `- Recent flavors used: ${rFlavors.join(', ')} — pick a different flavor.\n`;
+    if (rDisruptors.length) message += `- Recent disruptors used: ${rDisruptors.join(', ')} — cooldown, choose a different one if disruptor required.\n`;
+    message += `\n`;
+  }
+
+  // BEAT POSITION
+  if (typeof params.chapterProgress === 'number') {
+    const p = params.chapterProgress;
+    const pct = Math.round(p * 100);
+    const position =
+      p < 0.25
+        ? 'SETUP — establish normal, plant hooks, low disruptor intensity'
+        : p < 0.4
+        ? 'INCITING / RISING — first real disruption, axis shift required'
+        : p < 0.6
+        ? 'MIDPOINT — reversal / reveal / loyalty test; a status change is required'
+        : p < 0.85
+        ? 'ESCALATION — stakes high, pressure mounts, agency threatened'
+        : 'CLIMAX / RESOLUTION — forced choice + pay off + bridge';
+    message += `## CHAPTER BEAT POSITION\n${pct}% — ${position}\nLet the scene fit this position; do not linger in setup after midpoint.\n\n`;
   }
 
   // USER TRAJECTORY — son seçimler, AI niyet çıkarıp hikayeyi o yöne derinleştirsin.

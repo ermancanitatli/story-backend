@@ -59,6 +59,39 @@ export class MultiplayerSession extends Document {
     text: string;
     updatedAtStep: number;
   };
+
+  // === Dramatic state vector (3 AI uzman önerisi) ===
+  // AI her turn kendisi günceller; backend prompt'a next turn enjekte eder.
+  // 0-1 arası normalize. "null" = henüz ölçülmedi.
+  @Prop({
+    type: Object,
+    default: () => ({
+      tension: 0.2,
+      stakes: 0.2,
+      agency: 0.7,
+      mystery: 0.3,
+      intimacy: 0.2,
+      danger: 0.1,
+      turnsSinceDisruption: 0,
+      dominantEmotion: '',
+    }),
+  })
+  dramaState?: {
+    tension: number;
+    stakes: number;
+    agency: number;
+    mystery: number;
+    intimacy: number;
+    danger: number;
+    turnsSinceDisruption: number;
+    dominantEmotion: string;
+  };
+
+  // Son N turn'de AI'ın kullandığı beat/flavor/disruptor — recency avoidance.
+  // Backend push/shift ile ring buffer (son 4 element).
+  @Prop({ type: [String], default: [] }) recentBeats?: string[];
+  @Prop({ type: [String], default: [] }) recentFlavors?: string[];
+  @Prop({ type: [String], default: [] }) recentDisruptors?: string[];
 }
 
 export const MultiplayerSessionSchema = SchemaFactory.createForClass(MultiplayerSession);

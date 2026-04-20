@@ -420,6 +420,20 @@ export class StorySessionsService {
       .filter((t: string) => typeof t === 'string' && t.trim().length > 0);
     if (userChoice && type !== 'start') recentUserChoices.push(userChoice);
 
+    // Dramatic state + recency (3 uzman oybirliği)
+    const dramaState = (session as any).dramaState;
+    const recentBeats = ((session as any).recentBeats || []) as string[];
+    const recentFlavors = ((session as any).recentFlavors || []) as string[];
+    const recentDisruptors = ((session as any).recentDisruptors || []) as string[];
+    const chapterProgress = Math.min(nextStepCount / MAX_STEPS_PER_CHAPTER, 1);
+
+    // Prompt'a dramatic paramları enjekte et
+    promptParams.dramaState = dramaState;
+    promptParams.recentBeats = recentBeats;
+    promptParams.recentFlavors = recentFlavors;
+    promptParams.recentDisruptors = recentDisruptors;
+    promptParams.chapterProgress = chapterProgress;
+
     // === Grok çağrısı (gerekirse retry) ===
     const systemPrompt = buildSystemPrompt(promptParams);
     const userMessage = buildUserMessage({
@@ -433,6 +447,11 @@ export class StorySessionsService {
       currentChapter: promptChapterNumber,
       transitionDirective,
       recentUserChoices,
+      dramaState,
+      recentBeats,
+      recentFlavors,
+      recentDisruptors,
+      chapterProgress,
     });
 
     let grokResponse = await this.aiService.callGrokAPI({
@@ -602,6 +621,56 @@ export class StorySessionsService {
       endingType: grokResponse.endingType,
     });
 
+    // === Drama state + recency buffers (3 uzman oybirliği) ===
+    const prevDrama = (session as any).dramaState || {};
+    const stateAfter: any = (grokResponse as any).state_after || {};
+    const disruptorUsedSingle =
+      (grokResponse as any).disruptor &&
+      (grokResponse as any).disruptor !== 'none';
+    const nextTurnsSinceDisruption = disruptorUsedSingle
+      ? 0
+      : (prevDrama.turnsSinceDisruption ?? 0) + 1;
+    const clamp01 = (v: any, fb: number) =>
+      typeof v === 'number' && !isNaN(v) ? Math.max(0, Math.min(1, v)) : fb;
+    const updatedDramaState = {
+      tension: clamp01(stateAfter.tension, prevDrama.tension ?? 0.2),
+      stakes: clamp01(stateAfter.stakes, prevDrama.stakes ?? 0.2),
+      agency: clamp01(stateAfter.agency, prevDrama.agency ?? 0.7),
+      mystery: clamp01(stateAfter.mystery, prevDrama.mystery ?? 0.3),
+      intimacy: clamp01(stateAfter.intimacy, prevDrama.intimacy ?? 0.2),
+      danger: clamp01(stateAfter.danger, prevDrama.danger ?? 0.1),
+      turnsSinceDisruption: nextTurnsSinceDisruption,
+      dominantEmotion:
+        (typeof stateAfter.dominantEmotion === 'string' && stateAfter.dominantEmotion.trim()) ||
+        prevDrama.dominantEmotion ||
+        '',
+    };
+    const RING_SIZE = 4;
+    const pushRing = (arr: string[] | undefined, val: string | undefined): string[] => {
+      const list = (arr || []).slice();
+      const v = (val || '').trim();
+      if (!v) return list.slice(-RING_SIZE);
+      list.push(v);
+      return list.slice(-RING_SIZE);
+    };
+    const updatedRecentBeats = pushRing(
+      (session as any).recentBeats,
+      (grokResponse as any).beat,
+    );
+    const updatedRecentFlavors = pushRing(
+      (session as any).recentFlavors,
+      (grokResponse as any).flavor,
+    );
+    const updatedRecentDisruptors = disruptorUsedSingle
+      ? pushRing((session as any).recentDisruptors, (grokResponse as any).disruptor)
+      : ((session as any).recentDisruptors || []).slice(-RING_SIZE);
+
+    this.logger.log(
+      `[drama] session=${session._id} beat=${(grokResponse as any).beat || '?'} ` +
+        `flavor=${(grokResponse as any).flavor || '?'} disruptor=${(grokResponse as any).disruptor || 'none'} ` +
+        `axis=${(grokResponse as any).axis_touched || '?'} tension=${updatedDramaState.tension.toFixed(2)}`,
+    );
+
     // Session güncelle
     const sessionUpdate: any = {
       currentStep: newStep,
@@ -611,11 +680,16 @@ export class StorySessionsService {
       emotionalStates: updatedEmotions,
       lastPlayedAt: new Date(),
       lastProgressId: progress._id.toString(),
+      dramaState: updatedDramaState,
+      recentBeats: updatedRecentBeats,
+      recentFlavors: updatedRecentFlavors,
+      recentDisruptors: updatedRecentDisruptors,
     };
 
     // Chapter transition: rollingSummary sıfırla (yeni chapter yeni özet)
     if (isChapterTransition) {
       sessionUpdate.rollingSummary = { text: '', updatedAtStep: newStep };
+      sessionUpdate.recentBeats = []; // taze beat map
     }
 
     if (grokResponse.isEnding) {

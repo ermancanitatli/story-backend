@@ -616,14 +616,21 @@ export class MultiplayerService {
       transitionMode === 'entering' ? session.currentChapter + 1 : session.currentChapter;
 
     // User trajectory — son 5 userChoice (mevcut çağrı dahil), en eski → en yeni.
-    // recentDocs desc sort (en yeni ilk). Önceki user seçimlerinin text'ini
-    // al, bu turn'ün choice.text'ini de sona ekle.
     const recentUserChoices: string[] = [...recentDocs]
       .slice(0, 4)
       .reverse()
       .map((d: any) => d?.userChoice?.text || '')
       .filter((t: string) => t && t.trim().length > 0);
     recentUserChoices.push(choice.text);
+
+    // Dramatic state + recency buffers (3 uzman oybirliği)
+    const dramaState = (session as any).dramaState;
+    const recentBeats = ((session as any).recentBeats || []) as string[];
+    const recentFlavors = ((session as any).recentFlavors || []) as string[];
+    const recentDisruptors = ((session as any).recentDisruptors || []) as string[];
+
+    // Chapter progress — next chapter step / MAX_STEPS_PER_CHAPTER
+    const chapterProgress = Math.min(nextChapterStep / MAX_STEPS_PER_CHAPTER, 1);
 
     let grokResponse: any;
     try {
@@ -645,6 +652,11 @@ export class MultiplayerService {
         chapterNumber: promptChapterNumber,
         totalChapters,
         recentUserChoices,
+        dramaState,
+        recentBeats,
+        recentFlavors,
+        recentDisruptors,
+        chapterProgress,
       });
     } catch (err) {
       this.logger.error(
@@ -789,6 +801,54 @@ export class MultiplayerService {
       suggestChapterTransition: !!grokResponse.effects?.suggestChapterTransition,
     });
 
+    // === Drama state + recency buffer updates (3 uzman oybirliği) ===
+    const prevDrama = (session as any).dramaState || {};
+    const stateAfter: any = grokResponse.state_after || {};
+    const disruptorUsed = grokResponse.disruptor && grokResponse.disruptor !== 'none';
+    const nextTurnsSinceDisruption = disruptorUsed
+      ? 0
+      : (prevDrama.turnsSinceDisruption ?? 0) + 1;
+
+    const clamp01 = (v: any, fallback: number) =>
+      typeof v === 'number' && !isNaN(v) ? Math.max(0, Math.min(1, v)) : fallback;
+
+    const updatedDramaState = {
+      tension: clamp01(stateAfter.tension, prevDrama.tension ?? 0.2),
+      stakes: clamp01(stateAfter.stakes, prevDrama.stakes ?? 0.2),
+      agency: clamp01(stateAfter.agency, prevDrama.agency ?? 0.7),
+      mystery: clamp01(stateAfter.mystery, prevDrama.mystery ?? 0.3),
+      intimacy: clamp01(stateAfter.intimacy, prevDrama.intimacy ?? 0.2),
+      danger: clamp01(stateAfter.danger, prevDrama.danger ?? 0.1),
+      turnsSinceDisruption: nextTurnsSinceDisruption,
+      dominantEmotion:
+        (typeof stateAfter.dominantEmotion === 'string' && stateAfter.dominantEmotion.trim()) ||
+        prevDrama.dominantEmotion ||
+        '',
+    };
+
+    // Ring buffer (son 4 turn)
+    const RING_SIZE = 4;
+    const pushRing = (arr: string[] | undefined, val: string | undefined): string[] => {
+      const list = (arr || []).slice();
+      const v = (val || '').trim();
+      if (!v) return list.slice(-RING_SIZE);
+      list.push(v);
+      return list.slice(-RING_SIZE);
+    };
+
+    const updatedRecentBeats = pushRing(recentBeats, grokResponse.beat);
+    const updatedRecentFlavors = pushRing(recentFlavors, grokResponse.flavor);
+    const updatedRecentDisruptors = disruptorUsed
+      ? pushRing(recentDisruptors, grokResponse.disruptor)
+      : recentDisruptors.slice(-RING_SIZE);
+
+    this.logger.log(
+      `[drama] session=${sessionId} beat=${grokResponse.beat || '?'} ` +
+        `flavor=${grokResponse.flavor || '?'} disruptor=${grokResponse.disruptor || 'none'} ` +
+        `axis=${grokResponse.axis_touched || '?'} tension=${updatedDramaState.tension.toFixed(2)} ` +
+        `tsd=${updatedDramaState.turnsSinceDisruption}`,
+    );
+
     // Swap turns + chapter/step güncellemeleri
     const sessionUpdate: any = {
       activePlayerId: session.nextPlayerId,
@@ -798,10 +858,16 @@ export class MultiplayerService {
       currentStep: session.currentStep + 1,
       currentChapter: newChapter,
       chapterStepCount: isChapterTransition ? 0 : newChapterStepCount,
+      dramaState: updatedDramaState,
+      recentBeats: updatedRecentBeats,
+      recentFlavors: updatedRecentFlavors,
+      recentDisruptors: updatedRecentDisruptors,
     };
-    // Chapter transition'da rolling summary'yi sıfırla (yeni chapter yeni özet)
+    // Chapter transition'da rolling summary'yi sıfırla + recency buffer'ları yenile
     if (isChapterTransition) {
       sessionUpdate.rollingSummary = { text: '', updatedAtStep: newTurn };
+      // Yeni chapter beat map'i taze başlasın diye beat buffer'ı sıfırla
+      sessionUpdate.recentBeats = [];
     }
     if (grokResponse.isEnding) {
       sessionUpdate.phase = 'ended';

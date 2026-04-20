@@ -23,6 +23,20 @@ export interface GrokResponse {
   // Chapter transition guardrails
   scene_type?: 'chapter_transition' | 'continuation';
   acknowledged_directive?: string;
+  // Dramatic self-selection + state (3 uzman oybirliği)
+  beat?: string;
+  flavor?: string;
+  disruptor?: string;
+  axis_touched?: string;
+  state_after?: {
+    tension?: number;
+    stakes?: number;
+    agency?: number;
+    mystery?: number;
+    intimacy?: number;
+    danger?: number;
+    dominantEmotion?: string;
+  };
 }
 
 @Injectable()
@@ -318,6 +332,24 @@ export class AiService {
     // User trajectory: son N seçim — AI niyeti anlayıp hikayeyi o yöne derinleştirsin.
     // Element sırası en eski → en yeni. Tavsiye: son 3-5 choice.
     recentUserChoices?: string[];
+    // === Dramatic state (3 uzman oybirliği) ===
+    // AI kendi günceller, backend sonraki turn'e enjekte eder. 0-1 normalize.
+    dramaState?: {
+      tension?: number;
+      stakes?: number;
+      agency?: number;
+      mystery?: number;
+      intimacy?: number;
+      danger?: number;
+      turnsSinceDisruption?: number;
+      dominantEmotion?: string;
+    };
+    // Son 3-4 turn'de kullanılan beat/flavor/disruptor — recency avoidance
+    recentBeats?: string[];
+    recentFlavors?: string[];
+    recentDisruptors?: string[];
+    // Chapter beat position (%0-1). Save the Cat beat map için.
+    chapterProgress?: number; // örn. 4/10 = 0.4
   }): Promise<GrokResponse> {
     const langInstruction = this.buildSummaryLanguageInstruction(params.languageCode);
 
@@ -362,13 +394,25 @@ export class AiService {
       `EXAMPLES:\n${exampleBlock}\n\n` +
       `OUTPUT JSON SCHEMA (strict):\n` +
       `{\n` +
-      `  "eventChronicle": "<3-5 sentences, 3rd person objective, ${params.languageCode}, NO meta>",\n` +
+      `  "beat": "<setup|inciting|rising|midpoint|escalation|climax|resolution|breather>",\n` +
+      `  "flavor": "<revelation|conflict|intimacy|suspicion|humor|silence|wonder|dread|tenderness|reckoning|absurdity>",\n` +
+      `  "disruptor": "<none|interrupting_character|unexpected_news|environmental_shift|revelation|time_jump|emotional_eruption|physical_mishap|outsider_pov|sensory_intrusion|object_malfunction|memory_flash|betrayal_seed>",\n` +
+      `  "axis_touched": "<location_shift|relationship_delta|knowledge_gain|stakes_raise|character_reveal|external_pressure>",\n` +
+      `  "eventChronicle": "<3-5 sentences, 3rd person objective, ${params.languageCode}, NO meta. MUST embody the chosen beat+flavor and enact the axis_touched.>",\n` +
       `  "choices": [ {"id":"1","text":"..."}, {"id":"2","text":"..."}, {"id":"3","text":"..."}, {"id":"4","text":"..."} ],\n` +
+      `  "state_after": { "tension":0-1, "stakes":0-1, "agency":0-1, "mystery":0-1, "intimacy":0-1, "danger":0-1, "dominantEmotion":"<word>" },\n` +
       `  "effects": { "emotionalChanges": {...}, "itemsGained": [...], "itemsLost": [...], "suggestChapterTransition": boolean },\n` +
       `  "isEnding": boolean,\n` +
       `  "endingType": "string | null"\n` +
       `}\n` +
       `Choices must be in ${params.languageCode}. Exactly 4 choices with non-empty text.\n\n` +
+      `🎭 DRAMATIC DISCIPLINE (every chronicle MUST embody change — no filler, no status quo):\n` +
+      `1. SCENE MUST TURN: every chronicle ends in a different emotional/situational state than it started. If START_STATE == END_STATE, the scene has failed.\n` +
+      `2. AXIS MANDATE: every chronicle must enact at least ONE of {location_shift, relationship_delta, knowledge_gain, stakes_raise, character_reveal, external_pressure}. Fill axis_touched accordingly.\n` +
+      `3. BEAT/FLAVOR DIVERSITY: pick beat + flavor from the pools. RECENT beats/flavors used are listed in the user message — you are FORBIDDEN from reusing any of them unless no alternative fits narratively (explain in the chronicle why).\n` +
+      `4. DISRUPTOR ON FLAT STREAKS: if state alerts indicate flat/low tension or long stretch since disruption, set disruptor to a pool element (never 'none') and let it reshape the scene — a new character arrives, weather turns, phone rings, a secret surfaces, an accident happens. Not a decoration — an event that forces reaction.\n` +
+      `5. EARNED DISRUPTION: disruption must follow from established stakes — no random catastrophe. Each disruptor resonates with recent user choices + dramaState.\n` +
+      `6. CONSEQUENCE-BEARING BEATS: characters must want INCOMPATIBLE things this turn. Nobody leaves unchanged. Prefer concrete reveal/reversal/intrusion over gentle continuation.\n\n` +
       `CHOICE DIVERSITY (mandatory — avoid repetitive or near-duplicate options):\n` +
       `- The 4 choices must represent GENUINELY DIFFERENT next reactions. Each one should\n` +
       `  lead to a visibly different scene in the next turn (different tone, target, or\n` +
@@ -448,6 +492,111 @@ export class AiService {
       return '';
     })();
 
+    // DRAMATIC STATE + ALERTS block
+    const dramaBlock = (() => {
+      const ds = params.dramaState || {};
+      const has =
+        ds.tension !== undefined ||
+        ds.stakes !== undefined ||
+        ds.mystery !== undefined ||
+        ds.turnsSinceDisruption !== undefined;
+      if (!has) return '';
+      const snap = [
+        `tension=${ds.tension ?? '?'}`,
+        `stakes=${ds.stakes ?? '?'}`,
+        `agency=${ds.agency ?? '?'}`,
+        `mystery=${ds.mystery ?? '?'}`,
+        `intimacy=${ds.intimacy ?? '?'}`,
+        `danger=${ds.danger ?? '?'}`,
+        `turnsSinceDisruption=${ds.turnsSinceDisruption ?? 0}`,
+        ds.dominantEmotion ? `dominantEmotion=${ds.dominantEmotion}` : '',
+      ]
+        .filter(Boolean)
+        .join(', ');
+
+      // Backend-computed alerts
+      const alerts: string[] = [];
+      const t = ds.tension ?? 0.3;
+      const tsd = ds.turnsSinceDisruption ?? 0;
+      const stakes = ds.stakes ?? 0.3;
+      const agency = ds.agency ?? 0.7;
+      const intimacy = ds.intimacy ?? 0.3;
+      const mystery = ds.mystery ?? 0.3;
+      const danger = ds.danger ?? 0.1;
+      if (t < 0.4 && tsd >= 2) {
+        alerts.push(
+          `⚠ tension<0.4 AND ${tsd} turns since last disruption → MANDATORY disruptor this turn (pool-based, not 'none').`,
+        );
+      }
+      if (intimacy > 0.7 && mystery < 0.3) {
+        alerts.push(
+          `⚠ intimacy>0.7 AND mystery<0.3 → scene drifting to comfort. Introduce external pressure or hidden information.`,
+        );
+      }
+      if (agency < 0.3) {
+        alerts.push(
+          `⚠ agency<0.3 → player feels passive. Force a choice with meaningful consequences.`,
+        );
+      }
+      if (intimacy > 0.75 && stakes < 0.3) {
+        alerts.push(
+          `⚠ high intimacy + low stakes → seed a betrayal/complication (not resolution yet).`,
+        );
+      }
+      if (Math.max(t, stakes, mystery, intimacy, danger) - Math.min(t, stakes, mystery, intimacy, danger) < 0.2) {
+        alerts.push(
+          `⚠ state vector is flat (all metrics similar) → inject variety: shift at least 2 axes by ≥0.2 this turn.`,
+        );
+      }
+      return (
+        `\n\nDRAMATIC STATE (current): ${snap}` +
+        (alerts.length > 0 ? `\nSTATE ALERTS:\n${alerts.map((a) => `  - ${a}`).join('\n')}` : '')
+      );
+    })();
+
+    // RECENCY AVOIDANCE block (beats/flavors/disruptors used in last 3-4 turns)
+    const recencyBlock = (() => {
+      const beats = (params.recentBeats || []).filter(Boolean);
+      const flavors = (params.recentFlavors || []).filter(Boolean);
+      const disruptors = (params.recentDisruptors || []).filter((d) => d && d !== 'none');
+      if (beats.length === 0 && flavors.length === 0 && disruptors.length === 0) return '';
+      const lines: string[] = [];
+      if (beats.length > 0)
+        lines.push(
+          `FORBIDDEN BEATS (used recently, avoid unless no alternative fits): ${beats.join(', ')}`,
+        );
+      if (flavors.length > 0)
+        lines.push(
+          `FORBIDDEN FLAVORS (used recently): ${flavors.join(', ')}`,
+        );
+      if (disruptors.length > 0)
+        lines.push(
+          `RECENT DISRUPTORS (cooldown, pick a different one): ${disruptors.join(', ')}`,
+        );
+      return `\n\n${lines.join('\n')}`;
+    })();
+
+    // Beat position
+    const beatPositionBlock = (() => {
+      const p = params.chapterProgress;
+      if (p === undefined || p === null) return '';
+      const pct = Math.round(p * 100);
+      const position =
+        p < 0.25
+          ? 'SETUP — establish normal, plant hooks, low disruptor intensity'
+          : p < 0.4
+          ? 'INCITING / RISING — first real disruption, axis shift required, stakes visible'
+          : p < 0.6
+          ? 'MIDPOINT — reversal, reveal, loyalty test, a statü change is required'
+          : p < 0.85
+          ? 'ESCALATION — "bad guys close in", stakes high, agency pressure'
+          : 'CLIMAX / RESOLUTION — highest stakes, forced choice, pay off + bridge';
+      return (
+        `\n\nCHAPTER BEAT POSITION: ${pct}% (${position}).\n` +
+        `Let the chronicle fit this position — do not linger in setup mode after midpoint.`
+      );
+    })();
+
     // USER TRAJECTORY block — son seçimlerden niyet çıkarımı.
     // AI bu listeyi okur, baskın eğilimi (örn. "yakınlaşma arzusu", "kaçış",
     // "sorgulama") kendi başına tespit eder. Hard-coded kategori yok.
@@ -480,6 +629,9 @@ export class AiService {
       chapterBlock +
       transitionBlock +
       pacingBlock +
+      beatPositionBlock +
+      dramaBlock +
+      recencyBlock +
       trajectoryBlock +
       `\n\nWrite the eventChronicle describing the consequence of this choice.\n` +
       `Then propose exactly 4 "choices" for the NEXT turn` +
@@ -509,7 +661,10 @@ export class AiService {
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userMessage },
             ],
-            temperature: 0.7,
+            // Yüksek temperature + her retry'da ek boost → creative divergence.
+            // 3 uzman oy birliği: LLM conservative-extension bias'ı kırmak için.
+            temperature: 0.85 + attempt * 0.1,
+            top_p: 0.95,
             max_tokens: maxTokens,
             response_format: { type: 'json_object' },
           }),
@@ -573,7 +728,10 @@ export class AiService {
           false;
 
         this.logger.log(
-          `[orchestrator] success attempt=${attempt + 1} chronicle_len=${parsed.eventChronicle.length} choices=${parsed.choices.length}`,
+          `[orchestrator] OK attempt=${attempt + 1} beat=${parsed.beat || '?'} ` +
+            `flavor=${parsed.flavor || '?'} disruptor=${parsed.disruptor || 'none'} ` +
+            `axis=${parsed.axis_touched || '?'} tension=${parsed.state_after?.tension ?? '?'} ` +
+            `choices=${parsed.choices.length}`,
         );
 
         return {
@@ -585,6 +743,11 @@ export class AiService {
           },
           isEnding: !!parsed.isEnding,
           endingType: parsed.endingType || undefined,
+          beat: parsed.beat,
+          flavor: parsed.flavor,
+          disruptor: parsed.disruptor,
+          axis_touched: parsed.axis_touched,
+          state_after: parsed.state_after,
         } as GrokResponse;
       } catch (err) {
         this.logger.warn(
