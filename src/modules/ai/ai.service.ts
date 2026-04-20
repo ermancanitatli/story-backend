@@ -288,41 +288,67 @@ export class AiService {
     isLastChapter?: boolean;
   }): Promise<GrokResponse> {
     const langInstruction = this.buildSummaryLanguageInstruction(params.languageCode);
+
+    // 3rd person örnek — hikaye dilinde (Türkçe)
+    const langKey = (params.languageCode || 'en').toLowerCase().split(/[-_]/)[0];
+    const goodExamples: Record<string, string> = {
+      tr:
+        `✅ DOĞRU: "${params.hostName} matın yanına geldi ve ${params.guestName}'a yaklaştı. ${params.guestName} ona bakarak gülümsedi."\n` +
+        `❌ YANLIŞ: "Matın yanına geldim ve ${params.guestName}'a yaklaştım." (1. şahıs)\n` +
+        `❌ YANLIŞ: "Matın yanına geldin ve ${params.guestName}'a yaklaştın." (2. şahıs)\n` +
+        `❌ YANLIŞ: "Özet: ..." / "Erman'ın bakış açısından ..." (meta açıklama)`,
+      en:
+        `✅ CORRECT: "${params.hostName} walked to the mat and approached ${params.guestName}. ${params.guestName} looked at him and smiled."\n` +
+        `❌ WRONG: "I walked to the mat..." (1st person)\n` +
+        `❌ WRONG: "You walked to the mat..." (2nd person)\n` +
+        `❌ WRONG: "Summary:..." / "From Erman's perspective..." (meta commentary)`,
+    };
+    const exampleBlock = goodExamples[langKey] || goodExamples.en;
+
     const systemPrompt =
       `${params.storyContext}\n\n` +
-      `====================\n` +
-      `MODE: NEUTRAL EVENT CHRONICLER (3-call pipeline, Step 1 of 3)\n` +
-      `====================\n` +
-      `You are a NEUTRAL CHRONICLER. Your ONLY job is to describe WHAT HAPPENED as a result of ` +
-      `${params.activePlayerName}'s choice. The final first-person scenes for each player will be ` +
-      `written by separate POV rewriters in subsequent calls — NOT by you.\n\n` +
-      `HARD RULES:\n` +
-      `- Write in 3rd PERSON OBJECTIVE NARRATOR voice.\n` +
-      `- NEVER use "sen" / "you" / "I" / "ben".\n` +
-      `- ALWAYS use character names: ${params.hostName}, ${params.guestName}.\n` +
-      `- Describe external events, dialogue, and observable emotions — NOT internal thoughts.\n` +
-      `- 3-5 sentences. Same factual content any POV rewriter could use.\n` +
-      `- ${langInstruction}\n\n` +
-      `OUTPUT JSON SCHEMA:\n` +
+      `====================================================================\n` +
+      `🔴 OVERRIDE — NEUTRAL EVENT CHRONICLER MODE (Pipeline Step 1 of 3)\n` +
+      `====================================================================\n` +
+      `IGNORE any earlier instruction about "dual perspective", "scenes.host/guest",\n` +
+      `"ikinci şahıs", "1. şahıs anlatı" above. For THIS call you are a NEUTRAL\n` +
+      `CHRONICLER ONLY. Separate POV rewriter calls (Step 2 & 3) will handle\n` +
+      `first/second-person perspective afterward — do not do their job here.\n\n` +
+      `Your ONLY job: describe WHAT HAPPENED as a result of ${params.activePlayerName}'s choice,\n` +
+      `in 3rd-person objective narrator voice.\n\n` +
+      `HARD RULES (VIOLATION → RESPONSE REJECTED):\n` +
+      `1. eventChronicle MUST be 3rd person objective. Use names (${params.hostName}, ${params.guestName}).\n` +
+      `2. FORBIDDEN pronouns/forms in eventChronicle:\n` +
+      `   Turkish: "ben", "bana", "benim", "sen", "sana", "senin", "-dim/-dum/-ttim" endings\n` +
+      `   English: "I", "me", "my", "you", "your"\n` +
+      `3. NO meta text. NEVER write "Özet:", "Summary:", "From X's perspective:",\n` +
+      `   "X'in bakış açısından", or ANY commentary about the scene. The chronicle IS the scene.\n` +
+      `4. Describe observable events, dialogue, and visible emotions only.\n` +
+      `   Internal thoughts/feelings belong to POV rewriters (Step 2/3), NOT you.\n` +
+      `5. 3-5 sentences. Plain prose. No headers, no labels, no markdown.\n` +
+      `6. Language: ${langInstruction}\n\n` +
+      `EXAMPLES:\n${exampleBlock}\n\n` +
+      `OUTPUT JSON SCHEMA (strict):\n` +
       `{\n` +
-      `  "eventChronicle": "string (3-5 sentences, 3rd person objective, ${params.languageCode})",\n` +
-      `  "choices": [ { "id": "1", "text": "..." }, { "id": "2", "text": "..." }, ... ],\n` +
+      `  "eventChronicle": "<3-5 sentences, 3rd person objective, ${params.languageCode}, NO meta>",\n` +
+      `  "choices": [ {"id":"1","text":"..."}, {"id":"2","text":"..."}, {"id":"3","text":"..."}, {"id":"4","text":"..."} ],\n` +
       `  "effects": { "emotionalChanges": {...}, "itemsGained": [...], "itemsLost": [...], "suggestChapterTransition": boolean },\n` +
       `  "isEnding": boolean,\n` +
       `  "endingType": "string | null"\n` +
-      `}\n\n` +
-      `Choices must be written in the same language as eventChronicle (${params.languageCode}).`;
+      `}\n` +
+      `Choices must be in ${params.languageCode}. Exactly 4 choices with non-empty text.`;
 
     const userMessage =
-      `ACTIVE PLAYER: ${params.activePlayerName}\n` +
-      `CHOICE MADE: "${params.choiceText}"\n\n` +
-      `Describe the immediate consequence of this choice as a neutral chronicler. ` +
-      `Then propose 3-4 choices for the NEXT turn.\n\n` +
-      `REMINDERS:\n` +
-      `- 3rd person objective, no "sen"/"you"/"I".\n` +
-      `- Use names: ${params.hostName}, ${params.guestName}.\n` +
-      `- Facts only; leave internal POV to the rewriters.\n` +
-      (params.pacingHint ? `- Pacing: ${params.pacingHint}\n` : '') +
+      `ACTIVE PLAYER (who just chose): ${params.activePlayerName}\n` +
+      `CHOICE TEXT: "${params.choiceText}"\n\n` +
+      `Write the eventChronicle describing the consequence of this choice.\n` +
+      `Then propose exactly 4 "choices" for the NEXT turn.\n\n` +
+      `REMINDERS (repeat of system rules):\n` +
+      `- eventChronicle is 3rd person objective only.\n` +
+      `- Use ONLY the names ${params.hostName} and ${params.guestName}. No "ben/sen/I/you".\n` +
+      `- No "Özet:" / "Summary:" / perspective commentary. Pure narrative.\n` +
+      `- 3-5 sentences.\n` +
+      (params.pacingHint ? `- Pacing hint: ${params.pacingHint}\n` : '') +
       (params.isLastChapter ? `- This is the LAST chapter; pace toward an ending.\n` : '');
 
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -361,6 +387,33 @@ export class AiService {
         }
         if (!Array.isArray(parsed.choices) || parsed.choices.length === 0) {
           throw new Error('Missing/empty choices array');
+        }
+
+        // POV leak + meta-content validation — chronicle MUST be 3rd person objective
+        const chronicle = parsed.eventChronicle as string;
+        const chronicleLower = chronicle.toLowerCase();
+        // Turkish 1st person endings / pronouns
+        const tr1stOr2nd =
+          /\b(ben|bana|benim|beni|benimle|sen|sana|senin|seni|seninle|sana ait)\b/i.test(chronicle) ||
+          /\b\w+(?:dım|dim|dum|düm|tım|tim|tum|tüm|yorum|yorsun|muşum|mışım|acağım|eceğim|dın|din|dun|dün|tın|tin|tun|tün|yorsun)\b/i.test(chronicle);
+        // English I/me/my/you
+        const en1stOr2nd = /\b(i|me|my|mine|myself|you|your|yours|yourself)\b/i.test(
+          chronicle.replace(/'/g, ''),
+        );
+        // Meta content markers
+        const metaMarkers =
+          /(^|\n)\s*(özet|summary|not:|note:|from .*? perspective|.*? bakış açısından|açıklama:)/i.test(
+            chronicle,
+          );
+        const hasPovLeak =
+          (langKey === 'tr' && tr1stOr2nd) ||
+          (langKey === 'en' && en1stOr2nd) ||
+          metaMarkers;
+        if (hasPovLeak) {
+          this.logger.warn(
+            `[orchestrator] POV/meta leak detected (tr1st=${tr1stOr2nd}, en1st=${en1stOr2nd}, meta=${metaMarkers}), retrying`,
+          );
+          throw new Error('Chronicle contains 1st/2nd person or meta commentary');
         }
 
         // Normalize effects.suggestChapterTransition → root (multiplayer.service bekliyor)
@@ -430,21 +483,49 @@ export class AiService {
       return '';
     }
     const langInstruction = this.buildSummaryLanguageInstruction(params.languageCode);
+    const langKey = (params.languageCode || 'en').toLowerCase().split(/[-_]/)[0];
 
-    const otherRule = otherName
-      ? `- ${otherName} is 3rd person, addressed by name.\n`
-      : `- All other characters remain 3rd person.\n`;
+    // Dil-özel pronoun kuralı — interactive story formatı, "sen" = okuyucu = targetPov
+    const pronounRules: Record<string, string> = {
+      tr:
+        `- Bu interaktif hikaye 2. şahıs anlatımı (okuyucu perspektifi) kullanır.\n` +
+        `- "sen", "sana", "senin", "seni" → ${targetPov} (okuyucu, yani sahneyi yaşayan kişi).\n` +
+        (otherName ? `- ${otherName} → 3. şahıs, ismi veya "o/onu/ona" ile.\n` : '') +
+        `- "ben", "bana", "benim" ASLA KULLANMA.\n` +
+        `- Fiil çekimi: 2. tekil şahıs ("-din, -dun, -yorsun, -acaksın").`,
+      en:
+        `- This is 2nd-person narrative (reader = ${targetPov}).\n` +
+        `- "you", "your" → ${targetPov} (the reader living the scene).\n` +
+        (otherName ? `- ${otherName} → 3rd person, by name or "he/she/they".\n` : '') +
+        `- NEVER use "I", "me", "my".`,
+    };
+    const pronounBlock = pronounRules[langKey] || pronounRules.en;
+
+    // Dil-özel iyi/kötü örnek
+    const examples: Record<string, string> = {
+      tr:
+        `ÖRNEK (${targetPov} POV'u):\n` +
+        `✅ "Matına doğru yürüdün${otherName ? `, ${otherName} seni izledi` : ''}. Yeni pozu denedin, dengeni korudun."\n` +
+        `❌ "${targetPov} matına yürüdü" (3. şahıs — sen olmalı)\n` +
+        `❌ "Matıma doğru yürüdüm" (1. şahıs — sen olmalı)`,
+      en:
+        `EXAMPLE (${targetPov} POV):\n` +
+        `✅ "You walked to your mat${otherName ? `; ${otherName} watched you` : ''}. You tried the new pose, kept your balance."\n` +
+        `❌ "${targetPov} walked to the mat" (3rd person — use "you")\n` +
+        `❌ "I walked to the mat" (1st person — use "you")`,
+    };
+    const exampleBlock = examples[langKey] || examples.en;
 
     const userContent =
-      `Source (${sourceLabel}):\n"""\n${sourceScene}\n"""\n\n` +
-      `Rewrite this SAME EVENT from ${targetPov}'s FIRST-PERSON perspective.\n` +
-      `Rules:\n` +
-      `- "sen" / "you" = ${targetPov}\n` +
-      otherRule +
-      `- Same facts, decisions, dialogue — different INTERNAL experience.\n` +
+      `SOURCE (${sourceLabel}, 3rd-person neutral):\n"""\n${sourceScene}\n"""\n\n` +
+      `TASK: Rewrite the SAME EVENT from ${targetPov}'s perspective using 2nd-person ("sen"/"you") narrative.\n\n` +
+      `PRONOUN RULES:\n${pronounBlock}\n\n` +
+      `${exampleBlock}\n\n` +
+      `ADDITIONAL:\n` +
+      `- Same facts, decisions, dialogue. Different INTERNAL experience.\n` +
       `- Add ${targetPov}'s sensory / emotional perception.\n` +
-      `- 3-5 sentences, plain text, no JSON, no quotes around output.\n` +
-      `${langInstruction}`;
+      `- 3-5 sentences, plain prose. No JSON, no labels, no "Özet:", no quotes around output.\n` +
+      `- ${langInstruction}`;
 
     // Retry: empty / too-short output → 1 retry
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -461,8 +542,11 @@ export class AiService {
               {
                 role: 'system',
                 content:
-                  `You are a POV rewriter. Take a scene and rewrite it from the specified character's first-person perspective. ` +
-                  `Keep all events factual, only change internal perception and pronouns. Output plain text only. ${langInstruction}`,
+                  `You are a POV rewriter for an interactive story. The source is a 3rd-person ` +
+                  `neutral event chronicle. Rewrite it in 2nd-person narrative ("sen"/"you") from ` +
+                  `the specified character's perspective. The reader IS that character, so "sen"/"you" ` +
+                  `refers to them. Keep facts identical; change pronouns and add internal perception. ` +
+                  `Output plain prose only. ${langInstruction}`,
               },
               { role: 'user', content: userContent },
             ],
@@ -485,6 +569,31 @@ export class AiService {
         if (text.length < 30 && attempt === 0) {
           this.logger.warn(`[pov-rewriter] too-short output (${text.length}), retrying`);
           continue;
+        }
+        // Perspective validation — target POV 2nd person, karakter kendi adı 3. şahıs olarak geçmemeli
+        // ve kaynak metinle byte-eş olmamalı
+        if (attempt === 0 && text && sourceScene) {
+          const trimmedSource = sourceScene.trim();
+          const isIdenticalToSource = text === trimmedSource;
+          // Normalize: küçük harf + whitespace squash
+          const norm = (s: string) =>
+            s.toLowerCase().replace(/\s+/g, ' ').replace(/[.,!?;:'"()-]+/g, '').trim();
+          const isTooSimilar = norm(text) === norm(trimmedSource);
+          // Türkçe: hedef POV adı chronicle'daki gibi "X yaptı" formatında kalmışsa POV fail
+          // Basit kontrol: "sen/you" hiç yok + targetPov adı 3 kez geçiyor → POV uygulanmamış
+          const hasYouPronoun =
+            langKey === 'tr'
+              ? /\b(sen|sana|senin|seni|seninle)\b|\w+(?:din|dun|dün|tin|tun|tün|yorsun|acaksın|eceksin)\b/i.test(text)
+              : /\b(you|your|yours|yourself)\b/i.test(text);
+          const targetNameMentions = (text.match(new RegExp(`\\b${targetPov}\\b`, 'gi')) || [])
+            .length;
+          const povNotApplied = !hasYouPronoun && targetNameMentions >= 2;
+          if (isIdenticalToSource || isTooSimilar || povNotApplied) {
+            this.logger.warn(
+              `[pov-rewriter] POV not applied (identical=${isIdenticalToSource}, similar=${isTooSimilar}, no-you=${povNotApplied}), retrying with stricter prompt`,
+            );
+            continue;
+          }
         }
         return text;
       } catch (err) {
