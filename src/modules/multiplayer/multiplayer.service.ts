@@ -8,6 +8,11 @@ import { AiService } from '../ai/ai.service';
 import { buildSystemPrompt } from '../ai/prompts/system-prompt.builder';
 import { UsersService } from '../users/users.service';
 
+// === Chapter pacing constants (singleplayer ile aynı değerler) ===
+const MIN_STEPS_PER_CHAPTER = 5;
+const SOFT_STEPS_PER_CHAPTER = 7;
+const MAX_STEPS_PER_CHAPTER = 10;
+
 @Injectable()
 export class MultiplayerService {
   private readonly logger = new Logger(MultiplayerService.name);
@@ -151,6 +156,10 @@ export class MultiplayerService {
     const hostName = session.hostName || 'Host';
     const guestName = session.guestName || 'Guest';
 
+    const chapters = ((clone as any).chapters || []) as any[];
+    const totalChapters = chapters.length;
+    const firstChapter = chapters[0];
+
     const grokResponse = await this.aiService.generateEventOrchestrator({
       storyContext: orchestratorContext,
       choiceText: '[STORY OPENING — introduce characters, set the scene]',
@@ -159,6 +168,11 @@ export class MultiplayerService {
       hostName,
       guestName,
       languageCode: primaryLang,
+      chapterNumber: 1,
+      totalChapters,
+      chapterTitle: firstChapter?.title,
+      chapterSummary: firstChapter?.summary,
+      isLastChapter: totalChapters === 1,
     });
 
     const eventChronicle = grokResponse.currentScene || '';
@@ -226,6 +240,8 @@ export class MultiplayerService {
       lastProgressId: progress._id.toString(),
       turnOrder: 1,
       currentStep: 1,
+      currentChapter: 1,
+      chapterStepCount: 1,
     });
 
     this.logger.log(
@@ -497,6 +513,108 @@ export class MultiplayerService {
         ? session.guestName || 'Guest'
         : session.hostName || 'Host';
 
+    // ==========================================================================
+    // CHAPTER TRANSITION DECISION (singleplayer pattern birebir port)
+    // ==========================================================================
+    const chaptersArr = ((clone as any).chapters || []) as any[];
+    const totalChapters = chaptersArr.length;
+    const currentChapterIdx = session.currentChapter - 1;
+    const currentChapterData: any =
+      currentChapterIdx >= 0 && currentChapterIdx < totalChapters
+        ? chaptersArr[currentChapterIdx]
+        : null;
+    const isLastChapter = totalChapters > 0 && session.currentChapter >= totalChapters;
+    const nextChapterStep = (session.chapterStepCount || 0) + 1;
+
+    // Pacing windows
+    const inSoftWindow =
+      !isLastChapter &&
+      nextChapterStep >= MIN_STEPS_PER_CHAPTER &&
+      nextChapterStep <= SOFT_STEPS_PER_CHAPTER;
+    const inPressureWindow =
+      !isLastChapter &&
+      nextChapterStep > SOFT_STEPS_PER_CHAPTER &&
+      nextChapterStep < MAX_STEPS_PER_CHAPTER;
+    const mustForceTransition =
+      !isLastChapter && nextChapterStep >= MAX_STEPS_PER_CHAPTER;
+
+    let pacingHint: 'none' | 'soft' | 'pressure' = 'none';
+    if (inSoftWindow) pacingHint = 'soft';
+    else if (inPressureWindow) pacingHint = 'pressure';
+
+    // Önceki progress'in suggestChapterTransition flag'i — AI bir önceki turn'de
+    // "kapanış hazır" dediyse bu turn transition say (min-step koşulunu karşılıyorsa).
+    const lastProgressDoc: any = recentDocs[0]; // zaten desc sort (en son ilk)
+    const lastSuggested =
+      lastProgressDoc?.suggestChapterTransition === true ||
+      lastProgressDoc?.effects?.suggestChapterTransition === true;
+
+    let willTransition = mustForceTransition;
+    if (
+      !isLastChapter &&
+      lastSuggested &&
+      nextChapterStep >= MIN_STEPS_PER_CHAPTER
+    ) {
+      willTransition = true;
+    }
+
+    // Hedef chapter data (transition varsa sonraki, yoksa mevcut)
+    const nextChapterData: any =
+      willTransition && session.currentChapter < totalChapters
+        ? chaptersArr[session.currentChapter] // 0-based → session.currentChapter = next idx
+        : null;
+    const directiveChapter = willTransition ? nextChapterData : currentChapterData;
+    const transitionDirective = directiveChapter
+      ? directiveChapter.transitionDirectiveTranslations?.[primaryLang] ||
+        directiveChapter.transitionDirectiveTranslations?.['en'] ||
+        directiveChapter.transitionDirective ||
+        undefined
+      : undefined;
+    const transitionMode: 'none' | 'entering' = willTransition ? 'entering' : 'none';
+
+    // Bridge summary (chapter geçişi oluyorsa; cache varsa kullan, yoksa üret)
+    let previousChapterBridge: string | undefined;
+    if (willTransition) {
+      const chapterKey = String(session.currentChapter);
+      const cached = (session as any).bridgeSummaries?.[chapterKey];
+      if (cached) {
+        previousChapterBridge = cached;
+      } else if (allRecentScenes.length > 0) {
+        this.logger.log(
+          `[mp-transition] generating bridge summary for chapter ${chapterKey} session=${sessionId}`,
+        );
+        try {
+          const summary = await this.aiService.summarizeForTransition(
+            allRecentScenes.join('\n'),
+            primaryLang,
+          );
+          if (summary) {
+            previousChapterBridge = summary;
+            this.sessionModel
+              .updateOne(
+                { _id: session._id },
+                { $set: { [`bridgeSummaries.${chapterKey}`]: summary } },
+              )
+              .catch((err) =>
+                this.logger.warn(
+                  `[mp-transition] bridge cache write fail: ${err?.message || err}`,
+                ),
+              );
+          }
+        } catch (err) {
+          this.logger.warn(
+            `[mp-transition] bridge summary err: ${(err as Error).message}`,
+          );
+        }
+      }
+    }
+
+    // Orchestrator prompt'ına geçecek chapter numarası + metadata
+    const promptChapterData =
+      transitionMode === 'entering' ? nextChapterData : currentChapterData;
+    const promptChapterNumber =
+      transitionMode === 'entering' ? session.currentChapter + 1 : session.currentChapter;
+
     let grokResponse: any;
     try {
       grokResponse = await this.aiService.generateEventOrchestrator({
@@ -507,6 +625,15 @@ export class MultiplayerService {
         hostName: session.hostName || 'Host',
         guestName: session.guestName || 'Guest',
         languageCode: primaryLang,
+        pacingHint,
+        isLastChapter,
+        transitionMode,
+        transitionDirective,
+        previousChapterBridge,
+        chapterTitle: promptChapterData?.title,
+        chapterSummary: promptChapterData?.summary,
+        chapterNumber: promptChapterNumber,
+        totalChapters,
       });
     } catch (err) {
       this.logger.error(
@@ -616,8 +743,24 @@ export class MultiplayerService {
       };
     }
 
-    // Create progress
+    // Chapter progresyonu
     const newTurn = session.turnOrder + 1;
+    const newChapterStepCount = (session.chapterStepCount || 0) + 1;
+    let newChapter = session.currentChapter;
+    const isChapterTransition = willTransition && !grokResponse.isEnding && !isLastChapter;
+    if (isChapterTransition) {
+      newChapter = session.currentChapter + 1;
+    }
+
+    if (pacingHint !== 'none' || willTransition) {
+      this.logger.log(
+        `[mp-pacing] session=${sessionId} pacing=${pacingHint} chapterStep=${newChapterStepCount} ` +
+          `willTransition=${willTransition} aiSuggested=${!!grokResponse.effects?.suggestChapterTransition} ` +
+          `ch=${session.currentChapter}→${newChapter} isLast=${isLastChapter}`,
+      );
+    }
+
+    // Create progress
     const progress = await this.progressModel.create({
       sessionId: session._id,
       activePlayerId: session.nextPlayerId,
@@ -626,24 +769,32 @@ export class MultiplayerService {
       choices: this.normalizeChoices(choicesArr),
       scenes,
       localizedChoices,
-      currentChapter: session.currentChapter,
+      currentChapter: newChapter,
       effects: grokResponse.effects,
       isEnding: grokResponse.isEnding || false,
       endingType: grokResponse.endingType,
       eventSummary: eventChronicle,
+      isChapterTransition,
       suggestChapterTransition: !!grokResponse.effects?.suggestChapterTransition,
     });
 
-    // Swap turns
+    // Swap turns + chapter/step güncellemeleri
     const sessionUpdate: any = {
       activePlayerId: session.nextPlayerId,
       nextPlayerId: session.activePlayerId,
       turnOrder: newTurn,
       lastProgressId: progress._id.toString(),
       currentStep: session.currentStep + 1,
+      currentChapter: newChapter,
+      chapterStepCount: isChapterTransition ? 0 : newChapterStepCount,
     };
+    // Chapter transition'da rolling summary'yi sıfırla (yeni chapter yeni özet)
+    if (isChapterTransition) {
+      sessionUpdate.rollingSummary = { text: '', updatedAtStep: newTurn };
+    }
     if (grokResponse.isEnding) {
       sessionUpdate.phase = 'ended';
+      sessionUpdate.completed = true;
       sessionUpdate.completedAt = new Date();
     }
     await this.sessionModel.findByIdAndUpdate(sessionId, sessionUpdate);
@@ -655,6 +806,7 @@ export class MultiplayerService {
     if (
       rollingEnabled &&
       !grokResponse.isEnding &&
+      !isChapterTransition &&
       newTurn >= MIN_STEPS_FOR_ROLLING &&
       newTurn % ROLLING_SUMMARY_INTERVAL === 0
     ) {

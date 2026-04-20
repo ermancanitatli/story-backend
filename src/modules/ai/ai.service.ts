@@ -300,8 +300,21 @@ export class AiService {
     hostName: string;
     guestName: string;
     languageCode: string;
-    pacingHint?: string;
+    pacingHint?: 'none' | 'soft' | 'pressure';
     isLastChapter?: boolean;
+    // Chapter transition pack (singleplayer pattern)
+    transitionMode?: 'none' | 'entering';
+    transitionDirective?: {
+      timeDelta?: string;
+      location?: string;
+      mood?: string;
+      carryOver?: string;
+    };
+    previousChapterBridge?: string;
+    chapterTitle?: string;
+    chapterSummary?: string;
+    chapterNumber?: number;
+    totalChapters?: number;
   }): Promise<GrokResponse> {
     const langInstruction = this.buildSummaryLanguageInstruction(params.languageCode);
 
@@ -363,13 +376,72 @@ export class AiService {
           `❌ Bad: "Notice ${params.nextPlayerName}'s outfit" (that's an action ABOUT ${params.nextPlayerName}, not BY them)\n`
         : '');
 
+    // === Chapter transition + pacing blocks ===
+    const chapterBlock =
+      params.chapterNumber && params.totalChapters
+        ? `\nCHAPTER CONTEXT:\n` +
+          `- Chapter ${params.chapterNumber} / ${params.totalChapters}` +
+          (params.chapterTitle ? ` — "${params.chapterTitle}"` : '') +
+          (params.chapterSummary ? `\n- Chapter summary: ${params.chapterSummary}` : '') +
+          (params.isLastChapter ? `\n- ⚠️ THIS IS THE LAST CHAPTER — pace toward an ending.` : '')
+        : '';
+
+    const transitionBlock = (() => {
+      if (params.transitionMode !== 'entering') return '';
+      const d = params.transitionDirective || {};
+      const directiveLines: string[] = [];
+      if (d.timeDelta) directiveLines.push(`- TIME: ${d.timeDelta}`);
+      if (d.location) directiveLines.push(`- LOCATION: ${d.location}`);
+      if (d.mood) directiveLines.push(`- MOOD: ${d.mood}`);
+      if (d.carryOver) directiveLines.push(`- CARRY OVER: ${d.carryOver}`);
+      return (
+        `\n\n🎬 CHAPTER TRANSITION — this event begins a NEW CHAPTER.\n` +
+        (params.previousChapterBridge
+          ? `Previous chapter ended as: "${params.previousChapterBridge}"\n\n`
+          : '') +
+        (directiveLines.length > 0
+          ? `Director's directive for this transition:\n${directiveLines.join('\n')}\n\n`
+          : '') +
+        `The chronicle must open the new chapter — a clear scene/time/mood shift. ` +
+        `Do NOT continue the previous scene line-by-line; respect the directive above.`
+      );
+    })();
+
+    const pacingBlock = (() => {
+      if (params.transitionMode === 'entering') return ''; // transition itself governs pacing
+      if (params.isLastChapter) {
+        return (
+          `\n\nPACING: this is the last chapter. Steer events toward a natural ending ` +
+          `(set isEnding=true if the moment is right). Do NOT set suggestChapterTransition.`
+        );
+      }
+      if (params.pacingHint === 'soft') {
+        return (
+          `\n\nPACING (soft): this chapter has had enough beats (5-7 range). ` +
+          `If a natural chapter-closing moment emerges, set effects.suggestChapterTransition=true. ` +
+          `Otherwise continue the scene normally.`
+        );
+      }
+      if (params.pacingHint === 'pressure') {
+        return (
+          `\n\nPACING (pressure): this chapter is running long (8-9 range). ` +
+          `Steer the narrative toward a clear chapter-closing beat within the next 1-2 moments ` +
+          `and set effects.suggestChapterTransition=true when that beat is reached.`
+        );
+      }
+      return '';
+    })();
+
     const userMessage =
       `ACTIVE PLAYER (who just chose): ${params.activePlayerName}\n` +
       `CHOICE TEXT: "${params.choiceText}"\n` +
       (params.nextPlayerName
         ? `NEXT-TURN PLAYER: ${params.nextPlayerName} (choices must be ${params.nextPlayerName}'s actions)\n`
         : '') +
-      `\nWrite the eventChronicle describing the consequence of this choice.\n` +
+      chapterBlock +
+      transitionBlock +
+      pacingBlock +
+      `\n\nWrite the eventChronicle describing the consequence of this choice.\n` +
       `Then propose exactly 4 "choices" for the NEXT turn` +
       (params.nextPlayerName ? ` — actions ${params.nextPlayerName} will perform.` : '.') +
       `\n\nREMINDERS (repeat of system rules):\n` +
@@ -379,11 +451,8 @@ export class AiService {
       `- 3-5 sentences.\n` +
       (params.nextPlayerName
         ? `- Choices are for ${params.nextPlayerName} — write them in 3rd person imperative ` +
-          `("${params.nextPlayerName} offers...", "${params.nextPlayerName} yaklaşır ve...") or ` +
-          `as direct action verbs describing ${params.nextPlayerName}'s intent.\n`
-        : '') +
-      (params.pacingHint ? `- Pacing hint: ${params.pacingHint}\n` : '') +
-      (params.isLastChapter ? `- This is the LAST chapter; pace toward an ending.\n` : '');
+          `or as direct action verbs describing ${params.nextPlayerName}'s intent.\n`
+        : '');
 
     for (let attempt = 0; attempt < 3; attempt++) {
       const maxTokens = 1400 + attempt * 600;

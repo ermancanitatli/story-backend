@@ -33,6 +33,10 @@ export class MultiplayerSession extends Document {
   @Prop({ default: 1 }) currentChapter: number;
   @Prop({ default: 0 }) currentStep: number;
   @Prop({ default: 0 }) turnOrder: number;
+  // Current chapter içindeki adım sayacı — chapter transition'la sıfırlanır.
+  // Pacing window (soft 5-7 / pressure 8-9 / max 10) hesabı için.
+  @Prop({ default: 0 }) chapterStepCount: number;
+  @Prop({ default: false }) completed: boolean;
 
   @Prop({ type: Object }) emotionalStates?: Record<string, number>;
   @Prop({ type: Object }) storyClone?: Record<string, any>;
