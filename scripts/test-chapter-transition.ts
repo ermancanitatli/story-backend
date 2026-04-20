@@ -912,8 +912,24 @@ async function runMultiplayer() {
           undefined,
           otherPlayer.headers,
         );
-        const otherScene = otherProgress?.currentScene || '(boş)';
-        const sameScene = otherScene === result?.currentScene;
+        // Backend controller cascade: aktif oyuncu için `currentScene` her iki rol
+        // için de host POV fallback'i döndürebilir. Gerçek POV farkı `scenes.host`
+        // vs `scenes.guest` veya `scenes[lang]`'de. İkisini de karşılaştır.
+        const activeSceneFields = [
+          result?.currentScene,
+          result?.scenes?.host,
+          result?.scenes?.[activePlayer.language],
+        ].filter(Boolean);
+        const otherSceneFields = [
+          otherProgress?.currentScene,
+          otherProgress?.scenes?.guest,
+          otherProgress?.scenes?.[otherPlayer.language],
+        ].filter(Boolean);
+        const otherScene = otherSceneFields[0] || '(boş)';
+        // Her iki taraf da aynı metin gösteriyorsa POV fail
+        const sameScene = activeSceneFields.some((a: string) =>
+          otherSceneFields.some((b: string) => a === b),
+        );
         logLine(`◆ ${otherPlayer.name}'nın (${otherPlayer.language}) gördüğü sahne:${sameScene ? ' [⚠ AYNI METİN — perspective değişmemiş!]' : ''}`);
         logLine(`  ${otherScene}`);
         logLine('');

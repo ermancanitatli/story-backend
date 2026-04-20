@@ -129,21 +129,24 @@ export class MultiplayerService {
     const isBilingual = hostLang !== guestLang;
     const primaryLang = hostLang;
 
-    // Call 1 — Event Orchestrator (initial scene = story opening)
-    const orchestratorContext = buildSystemPrompt({
-      storyTitle: clone.title || 'Interactive Story',
-      storySummary: clone.summary || '',
-      characters: (clone.characters || []) as any[],
-      currentChapter: 1,
-      emotionalStates: session.emotionalStates as any,
-      censorship: true,
-      isMultiplayer: true,
-      hostName: session.hostName,
-      guestName: session.guestName,
-      activePlayerName: session.hostName,
-      languages: [primaryLang],
-      requireDualPerspectiveSameLang: false,
-    });
+    // Call 1 — Event Orchestrator (initial scene = story opening), POV-free context
+    const charactersBlock = ((clone.characters || []) as any[])
+      .map((c: any) => {
+        const name = c.name || 'Unknown';
+        const role = c.role || '';
+        const desc = c.description || '';
+        return `- ${name}${role ? ` (${role})` : ''}${desc ? `: ${desc}` : ''}`;
+      })
+      .join('\n');
+    const orchestratorContext = [
+      `STORY: ${clone.title || 'Interactive Story'}`,
+      clone.summary ? `SUMMARY: ${clone.summary}` : '',
+      `CURRENT CHAPTER: 1 (opening)`,
+      charactersBlock ? `CHARACTERS:\n${charactersBlock}` : '',
+      `PLAYERS:\n- ${session.hostName || 'Host'} (HOST)\n- ${session.guestName || 'Guest'} (GUEST)`,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
 
     const hostName = session.hostName || 'Host';
     const guestName = session.guestName || 'Guest';
@@ -152,6 +155,7 @@ export class MultiplayerService {
       storyContext: orchestratorContext,
       choiceText: '[STORY OPENING — introduce characters, set the scene]',
       activePlayerName: hostName,
+      nextPlayerName: hostName, // İlk turn'de host aktif; choices host için
       hostName,
       guestName,
       languageCode: primaryLang,
@@ -436,29 +440,62 @@ export class MultiplayerService {
     // ==========================================================================
     // 3-CALL PIPELINE — Call 1: Event Orchestrator (neutral chronicle + choices)
     // ==========================================================================
-    // Orchestrator için system prompt — POV-free, neutral narrator mode.
-    // buildSystemPrompt'a requireDualPerspectiveSameLang=false geçiyoruz çünkü
-    // bu call'da dual sahne üretmesi istemiyoruz; sadece olay özeti + choices.
-    const orchestratorContext = buildSystemPrompt({
-      storyTitle: clone.title || '',
-      storySummary: clone.summary || '',
-      characters: (clone.characters || []) as any[],
-      currentChapter: session.currentChapter,
-      emotionalStates: session.emotionalStates as any,
-      censorship: true,
-      isMultiplayer: true,
-      hostName: session.hostName,
-      guestName: session.guestName,
-      activePlayerName: activeNameForPrompt,
-      // Orchestrator tek dilde (hikaye dili) yazar — POV rewriter'lar her oyuncunun diline çevirir
-      languages: [session.hostLanguageCode || session.guestLanguageCode || 'en'],
-      requireDualPerspectiveSameLang: false,
-      rollingSummary: tierRollingSummary,
-      chapterBridges: tierChapterBridges,
-      recentHistory,
-    });
+    // NOT: buildSystemPrompt çağırmıyoruz — içindeki 2. şahıs "sen" ve dual POV
+    // talimatları orchestrator'ı kirletiyor. Minimal POV-FREE context kuruyoruz.
+    const charactersBlock = ((clone.characters || []) as any[])
+      .map((c: any) => {
+        const name = c.name || 'Unknown';
+        const role = c.role || '';
+        const desc = c.description || '';
+        return `- ${name}${role ? ` (${role})` : ''}${desc ? `: ${desc}` : ''}`;
+      })
+      .join('\n');
+
+    const playerBlock =
+      `PLAYERS:\n` +
+      `- ${session.hostName || 'Host'} (HOST, ${session.hostGender || 'unknown'}) — main protagonist\n` +
+      `- ${session.guestName || 'Guest'} (GUEST, ${session.guestGender || 'unknown'}) — co-protagonist`;
+
+    const emoBlock = session.emotionalStates
+      ? `EMOTIONAL STATE (current): ${JSON.stringify(session.emotionalStates)}`
+      : '';
+
+    const historyBlock =
+      recentHistory && recentHistory.length > 0
+        ? `RECENT SCENES (neutral summaries, most recent last):\n` +
+          recentHistory.map((s, i) => `[${i + 1}] ${s}`).join('\n\n')
+        : 'RECENT SCENES: (none — opening)';
+
+    const summaryBlock = tierRollingSummary
+      ? `ROLLING SUMMARY (earlier scenes):\n${tierRollingSummary}`
+      : '';
+
+    const bridgesBlock =
+      tierChapterBridges && tierChapterBridges.length > 0
+        ? `CHAPTER BRIDGES (prior chapters):\n${tierChapterBridges.join('\n')}`
+        : '';
+
+    const orchestratorContext = [
+      `STORY: ${clone.title || 'Interactive Story'}`,
+      clone.summary ? `SUMMARY: ${clone.summary}` : '',
+      `CURRENT CHAPTER: ${session.currentChapter}`,
+      charactersBlock ? `CHARACTERS:\n${charactersBlock}` : '',
+      playerBlock,
+      emoBlock,
+      bridgesBlock,
+      summaryBlock,
+      historyBlock,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
 
     const primaryLang = session.hostLanguageCode || session.guestLanguageCode || 'en';
+
+    // Sıradaki oyuncu = şu an aktif olmayan. Orchestrator choice'ları o kişiye üretecek.
+    const nextPlayerName =
+      userId === session.hostId?.toString()
+        ? session.guestName || 'Guest'
+        : session.hostName || 'Host';
 
     let grokResponse: any;
     try {
@@ -466,6 +503,7 @@ export class MultiplayerService {
         storyContext: orchestratorContext,
         choiceText: choice.text,
         activePlayerName: activeNameForPrompt,
+        nextPlayerName,
         hostName: session.hostName || 'Host',
         guestName: session.guestName || 'Guest',
         languageCode: primaryLang,

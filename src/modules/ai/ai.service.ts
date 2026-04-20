@@ -31,11 +31,26 @@ export class AiService {
   private readonly apiUrl: string;
   private readonly apiKey: string;
   private readonly model: string;
+  // Reasoning model — POV rewrite / instruction-heavy task'lar için.
+  // Default grok-4-1-fast-reasoning ($0.20/$0.50 per 1M). Env'den override edilebilir.
+  private readonly reasoningModel: string;
 
   constructor(private config: ConfigService) {
     this.apiUrl = this.config.get('GROK_API_URL', 'https://api.x.ai/v1/chat/completions');
     this.apiKey = this.config.get('GROK_API_KEY', '');
     this.model = this.config.get('GROK_MODEL', 'grok-4-fast-non-reasoning');
+    this.reasoningModel = this.config.get(
+      'GROK_REASONING_MODEL',
+      'grok-4-1-fast-reasoning',
+    );
+  }
+
+  /**
+   * Türkçe/Latin karakterli kelimeleri regex için escape eder.
+   * POV anonymization'da isimlerin regex metakarakter içermemesini garantiler.
+   */
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**
@@ -281,6 +296,7 @@ export class AiService {
     storyContext: string;
     choiceText: string;
     activePlayerName: string;
+    nextPlayerName?: string; // Sıradaki aktif olacak oyuncu — choices o kişinin aksiyonu olmalı
     hostName: string;
     guestName: string;
     languageCode: string;
@@ -336,18 +352,36 @@ export class AiService {
       `  "isEnding": boolean,\n` +
       `  "endingType": "string | null"\n` +
       `}\n` +
-      `Choices must be in ${params.languageCode}. Exactly 4 choices with non-empty text.`;
+      `Choices must be in ${params.languageCode}. Exactly 4 choices with non-empty text.\n` +
+      (params.nextPlayerName
+        ? `\n⚠️ NEXT-TURN CHOICES RULE:\n` +
+          `The "choices" array is for ${params.nextPlayerName} (the player who will act NEXT).\n` +
+          `Each choice MUST describe an action ${params.nextPlayerName} performs — e.g. what ${params.nextPlayerName}\n` +
+          `says, does, or decides. NEVER propose choices about what happens to ${params.nextPlayerName}\n` +
+          `or what another character does to ${params.nextPlayerName}.\n` +
+          `✅ Example (if next = ${params.nextPlayerName}): "${params.nextPlayerName} smiles and accepts"\n` +
+          `❌ Bad: "Notice ${params.nextPlayerName}'s outfit" (that's an action ABOUT ${params.nextPlayerName}, not BY them)\n`
+        : '');
 
     const userMessage =
       `ACTIVE PLAYER (who just chose): ${params.activePlayerName}\n` +
-      `CHOICE TEXT: "${params.choiceText}"\n\n` +
-      `Write the eventChronicle describing the consequence of this choice.\n` +
-      `Then propose exactly 4 "choices" for the NEXT turn.\n\n` +
-      `REMINDERS (repeat of system rules):\n` +
+      `CHOICE TEXT: "${params.choiceText}"\n` +
+      (params.nextPlayerName
+        ? `NEXT-TURN PLAYER: ${params.nextPlayerName} (choices must be ${params.nextPlayerName}'s actions)\n`
+        : '') +
+      `\nWrite the eventChronicle describing the consequence of this choice.\n` +
+      `Then propose exactly 4 "choices" for the NEXT turn` +
+      (params.nextPlayerName ? ` — actions ${params.nextPlayerName} will perform.` : '.') +
+      `\n\nREMINDERS (repeat of system rules):\n` +
       `- eventChronicle is 3rd person objective only.\n` +
       `- Use ONLY the names ${params.hostName} and ${params.guestName}. No "ben/sen/I/you".\n` +
       `- No "Özet:" / "Summary:" / perspective commentary. Pure narrative.\n` +
       `- 3-5 sentences.\n` +
+      (params.nextPlayerName
+        ? `- Choices are for ${params.nextPlayerName} — write them in 3rd person imperative ` +
+          `("${params.nextPlayerName} offers...", "${params.nextPlayerName} yaklaşır ve...") or ` +
+          `as direct action verbs describing ${params.nextPlayerName}'s intent.\n`
+        : '') +
       (params.pacingHint ? `- Pacing hint: ${params.pacingHint}\n` : '') +
       (params.isLastChapter ? `- This is the LAST chapter; pace toward an ending.\n` : '');
 
@@ -389,29 +423,36 @@ export class AiService {
           throw new Error('Missing/empty choices array');
         }
 
-        // POV leak + meta-content validation — chronicle MUST be 3rd person objective
+        // POV leak + meta-content validation — chronicle MUST be 3rd person objective.
+        // Regex hafif: sadece ayrık pronoun'lar (isim/ek değil). Yanlış pozitif olmasın.
         const chronicle = parsed.eventChronicle as string;
-        const chronicleLower = chronicle.toLowerCase();
-        // Turkish 1st person endings / pronouns
-        const tr1stOr2nd =
-          /\b(ben|bana|benim|beni|benimle|sen|sana|senin|seni|seninle|sana ait)\b/i.test(chronicle) ||
-          /\b\w+(?:dım|dim|dum|düm|tım|tim|tum|tüm|yorum|yorsun|muşum|mışım|acağım|eceğim|dın|din|dun|dün|tın|tin|tun|tün|yorsun)\b/i.test(chronicle);
-        // English I/me/my/you
-        const en1stOr2nd = /\b(i|me|my|mine|myself|you|your|yours|yourself)\b/i.test(
+        const trPronouns =
+          /\b(ben|bana|benim|beni|benimle|bende|sen|sana|senin|seni|seninle|sende)\b/i.test(
+            chronicle,
+          );
+        // Turkish 2nd person fiil ekleri — ayrık kelime sonunda "-din/-dun/-dün"
+        // (en az 4 harfli fiil köklerinden sonra, "dün" günlük kelimesini yakalamamak için)
+        const tr2ndVerbEnd =
+          /\b[a-zçğıöşü]{3,}(?:din|dun|dün|tin|tun|tün|dın|tın|yorsun|acaksın|eceksin|mişsin|mışsın|muşsun|müşsün)\b/i.test(
+            chronicle,
+          );
+        const en1stOr2nd = /\b(I|me|my|mine|myself|you|your|yours|yourself)\b/.test(
           chronicle.replace(/'/g, ''),
         );
-        // Meta content markers
         const metaMarkers =
-          /(^|\n)\s*(özet|summary|not:|note:|from .*? perspective|.*? bakış açısından|açıklama:)/i.test(
+          /(^|\n)\s*(özet\s*[:\-]|summary\s*[:\-]|not\s*[:\-]|note\s*[:\-]|from .+? perspective|.+? bakış açısından|açıklama\s*[:\-])/i.test(
             chronicle,
           );
         const hasPovLeak =
-          (langKey === 'tr' && tr1stOr2nd) ||
+          (langKey === 'tr' && (trPronouns || tr2ndVerbEnd)) ||
           (langKey === 'en' && en1stOr2nd) ||
           metaMarkers;
+        this.logger.log(
+          `[orchestrator-dbg] langKey=${langKey} chronicle_head="${chronicle.slice(0, 80).replace(/\n/g, ' ')}" tr_pron=${trPronouns} tr_verb=${tr2ndVerbEnd}`,
+        );
         if (hasPovLeak) {
           this.logger.warn(
-            `[orchestrator] POV/meta leak detected (tr1st=${tr1stOr2nd}, en1st=${en1stOr2nd}, meta=${metaMarkers}), retrying`,
+            `[orchestrator] POV/meta leak (tr_pron=${trPronouns}, tr_verb=${tr2ndVerbEnd}, en=${en1stOr2nd}, meta=${metaMarkers}), retry ${attempt + 1}`,
           );
           throw new Error('Chronicle contains 1st/2nd person or meta commentary');
         }
@@ -482,53 +523,75 @@ export class AiService {
       );
       return '';
     }
-    const langInstruction = this.buildSummaryLanguageInstruction(params.languageCode);
+
     const langKey = (params.languageCode || 'en').toLowerCase().split(/[-_]/)[0];
+    const langInstruction = this.buildSummaryLanguageInstruction(params.languageCode);
 
-    // Dil-özel pronoun kuralı — interactive story formatı, "sen" = okuyucu = targetPov
-    const pronounRules: Record<string, string> = {
-      tr:
-        `- Bu interaktif hikaye 2. şahıs anlatımı (okuyucu perspektifi) kullanır.\n` +
-        `- "sen", "sana", "senin", "seni" → ${targetPov} (okuyucu, yani sahneyi yaşayan kişi).\n` +
-        (otherName ? `- ${otherName} → 3. şahıs, ismi veya "o/onu/ona" ile.\n` : '') +
-        `- "ben", "bana", "benim" ASLA KULLANMA.\n` +
-        `- Fiil çekimi: 2. tekil şahıs ("-din, -dun, -yorsun, -acaksın").`,
-      en:
-        `- This is 2nd-person narrative (reader = ${targetPov}).\n` +
-        `- "you", "your" → ${targetPov} (the reader living the scene).\n` +
-        (otherName ? `- ${otherName} → 3rd person, by name or "he/she/they".\n` : '') +
-        `- NEVER use "I", "me", "my".`,
-    };
-    const pronounBlock = pronounRules[langKey] || pronounRules.en;
+    // ======================================================================
+    // PHASE 1 — ANONYMIZATION (dominant entity bias elimination)
+    // ======================================================================
+    // targetPov → __YOU__ / otherName → __OTHER__
+    // LLM artık "hangi karakter chronicle'da baskın" göremiyor; sadece
+    // placeholder'ları görüyor. Attention positional bias'ı da kırılıyor.
+    const YOU_TOKEN = '__YOU__';
+    const OTHER_TOKEN = '__OTHER__';
 
-    // Dil-özel iyi/kötü örnek
-    const examples: Record<string, string> = {
-      tr:
-        `ÖRNEK (${targetPov} POV'u):\n` +
-        `✅ "Matına doğru yürüdün${otherName ? `, ${otherName} seni izledi` : ''}. Yeni pozu denedin, dengeni korudun."\n` +
-        `❌ "${targetPov} matına yürüdü" (3. şahıs — sen olmalı)\n` +
-        `❌ "Matıma doğru yürüdüm" (1. şahıs — sen olmalı)`,
-      en:
-        `EXAMPLE (${targetPov} POV):\n` +
-        `✅ "You walked to your mat${otherName ? `; ${otherName} watched you` : ''}. You tried the new pose, kept your balance."\n` +
-        `❌ "${targetPov} walked to the mat" (3rd person — use "you")\n` +
-        `❌ "I walked to the mat" (1st person — use "you")`,
-    };
-    const exampleBlock = examples[langKey] || examples.en;
+    let anonymized = sourceScene;
+    // Uzun isimler önce replace edilmeli (overlap'i engellemek için)
+    const replacements: Array<[string, string]> = [];
+    if (targetPov) replacements.push([targetPov, YOU_TOKEN]);
+    if (otherName && otherName !== targetPov) replacements.push([otherName, OTHER_TOKEN]);
+    // İsimleri uzunluğa göre sırala (uzun önce)
+    replacements.sort(([a], [b]) => b.length - a.length);
+    for (const [name, token] of replacements) {
+      anonymized = anonymized.replace(
+        new RegExp(`\\b${this.escapeRegex(name)}\\b`, 'gi'),
+        token,
+      );
+      // "Esra'nın", "Erman'ın" gibi apostroflu iyelik eki varyantı
+      anonymized = anonymized.replace(
+        new RegExp(`\\b${this.escapeRegex(name)}['']([a-zçğıöşü]+)`, 'gi'),
+        `${token}'$1`,
+      );
+    }
 
-    const userContent =
-      `SOURCE (${sourceLabel}, 3rd-person neutral):\n"""\n${sourceScene}\n"""\n\n` +
-      `TASK: Rewrite the SAME EVENT from ${targetPov}'s perspective using 2nd-person ("sen"/"you") narrative.\n\n` +
-      `PRONOUN RULES:\n${pronounBlock}\n\n` +
-      `${exampleBlock}\n\n` +
-      `ADDITIONAL:\n` +
-      `- Same facts, decisions, dialogue. Different INTERNAL experience.\n` +
-      `- Add ${targetPov}'s sensory / emotional perception.\n` +
-      `- 3-5 sentences, plain prose. No JSON, no labels, no "Özet:", no quotes around output.\n` +
-      `- ${langInstruction}`;
+    // ======================================================================
+    // PHASE 2 — LLM CALL (reasoning model, JSON I/O, system/user split)
+    // ======================================================================
+    // Prompt placeholder-based — karakter ismini görmez. "YOU = okuyucu" kuralı
+    // jenerik ve hiçbir karaktere özel değil.
+    const systemContent =
+      `You are a narrative POV rewriter. Your input is a 3rd-person neutral event ` +
+      `chronicle containing two tokens:\n` +
+      `  - ${YOU_TOKEN} = the reader (the character whose POV you must adopt)\n` +
+      `  - ${OTHER_TOKEN} = the other character (must stay in 3rd person)\n\n` +
+      `Your task: rewrite the chronicle in 2nd-person narrative. Every reference to ` +
+      `${YOU_TOKEN} becomes the 2nd-person pronoun ("you" in English, "sen/sana/senin/seni" ` +
+      `and corresponding verb conjugation in Turkish). Every reference to ${OTHER_TOKEN} ` +
+      `stays in 3rd person (leave the ${OTHER_TOKEN} token as-is; it will be replaced after ` +
+      `your output).\n\n` +
+      `Rules:\n` +
+      `- Keep ALL facts, decisions, dialogue identical.\n` +
+      `- Add subtle sensory/emotional perception from ${YOU_TOKEN}'s body.\n` +
+      `- 3-5 sentences, plain prose.\n` +
+      `- Do NOT invent a name for ${YOU_TOKEN}. Do NOT write ${YOU_TOKEN} literally in output — ` +
+      `replace every occurrence with 2nd-person.\n` +
+      `- Keep ${OTHER_TOKEN} exactly as ${OTHER_TOKEN} (the token) in your output.\n` +
+      `- ${langInstruction}\n\n` +
+      `Output JSON strictly: {"rewritten": "..."}`;
 
-    // Retry: empty / too-short output → 1 retry
-    for (let attempt = 0; attempt < 2; attempt++) {
+    const userContent = JSON.stringify({
+      chronicle_anonymized: anonymized,
+      you_token: YOU_TOKEN,
+      other_token: OTHER_TOKEN,
+      output_language: langKey,
+      instruction:
+        `Rewrite the chronicle so every ${YOU_TOKEN} becomes 2nd-person. ` +
+        `Keep ${OTHER_TOKEN} literal in your output.`,
+    });
+
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         const response = await fetch(this.apiUrl, {
           method: 'POST',
@@ -537,71 +600,101 @@ export class AiService {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: this.model,
+            model: this.reasoningModel,
             messages: [
-              {
-                role: 'system',
-                content:
-                  `You are a POV rewriter for an interactive story. The source is a 3rd-person ` +
-                  `neutral event chronicle. Rewrite it in 2nd-person narrative ("sen"/"you") from ` +
-                  `the specified character's perspective. The reader IS that character, so "sen"/"you" ` +
-                  `refers to them. Keep facts identical; change pronouns and add internal perception. ` +
-                  `Output plain prose only. ${langInstruction}`,
-              },
+              { role: 'system', content: systemContent },
               { role: 'user', content: userContent },
             ],
-            temperature: 0.55,
-            max_tokens: 800,
+            // Per-call entropy decorrelation — uzman 2 önerisi.
+            // Paralel iki call'un identical distribution'a düşmesini engeller.
+            temperature: 0.6 + attempt * 0.15,
+            max_tokens: 1200,
+            response_format: { type: 'json_object' },
           }),
         });
 
         if (!response.ok) {
           const errorText = await response.text();
           this.logger.warn(
-            `generatePovPerspective failed (${response.status}): ${errorText}`,
+            `[pov-rewriter] HTTP ${response.status}: ${errorText.slice(0, 200)}`,
           );
-          if (attempt === 0) continue;
+          if (attempt < maxAttempts - 1) continue;
           return '';
         }
 
         const data = await response.json();
-        const text = (data.choices?.[0]?.message?.content?.trim() || '') as string;
-        if (text.length < 30 && attempt === 0) {
-          this.logger.warn(`[pov-rewriter] too-short output (${text.length}), retrying`);
+        const raw = data.choices?.[0]?.message?.content || '';
+        let parsed: any;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          this.logger.warn(`[pov-rewriter] JSON parse fail attempt=${attempt + 1}`);
           continue;
         }
-        // Perspective validation — target POV 2nd person, karakter kendi adı 3. şahıs olarak geçmemeli
-        // ve kaynak metinle byte-eş olmamalı
-        if (attempt === 0 && text && sourceScene) {
-          const trimmedSource = sourceScene.trim();
-          const isIdenticalToSource = text === trimmedSource;
-          // Normalize: küçük harf + whitespace squash
-          const norm = (s: string) =>
-            s.toLowerCase().replace(/\s+/g, ' ').replace(/[.,!?;:'"()-]+/g, '').trim();
-          const isTooSimilar = norm(text) === norm(trimmedSource);
-          // Türkçe: hedef POV adı chronicle'daki gibi "X yaptı" formatında kalmışsa POV fail
-          // Basit kontrol: "sen/you" hiç yok + targetPov adı 3 kez geçiyor → POV uygulanmamış
-          const hasYouPronoun =
-            langKey === 'tr'
-              ? /\b(sen|sana|senin|seni|seninle)\b|\w+(?:din|dun|dün|tin|tun|tün|yorsun|acaksın|eceksin)\b/i.test(text)
-              : /\b(you|your|yours|yourself)\b/i.test(text);
-          const targetNameMentions = (text.match(new RegExp(`\\b${targetPov}\\b`, 'gi')) || [])
-            .length;
-          const povNotApplied = !hasYouPronoun && targetNameMentions >= 2;
-          if (isIdenticalToSource || isTooSimilar || povNotApplied) {
-            this.logger.warn(
-              `[pov-rewriter] POV not applied (identical=${isIdenticalToSource}, similar=${isTooSimilar}, no-you=${povNotApplied}), retrying with stricter prompt`,
-            );
-            continue;
-          }
+
+        let rewritten = typeof parsed.rewritten === 'string' ? parsed.rewritten.trim() : '';
+        if (rewritten.length < 30) {
+          this.logger.warn(
+            `[pov-rewriter] output too short (${rewritten.length}) attempt=${attempt + 1}`,
+          );
+          continue;
         }
-        return text;
+
+        // ==================================================================
+        // PHASE 3 — DEANONYMIZATION
+        // ==================================================================
+        // OTHER_TOKEN → otherName (gerçek isim geri konur).
+        // YOU_TOKEN hâlâ metinde varsa POV fail (model placeholder'ı 2nd person'a
+        // çevirmedi) → retry.
+        if (rewritten.includes(YOU_TOKEN)) {
+          this.logger.warn(
+            `[pov-rewriter] YOU_TOKEN still present in output (POV not applied), attempt=${attempt + 1}`,
+          );
+          continue;
+        }
+
+        if (otherName) {
+          rewritten = rewritten.replace(
+            new RegExp(this.escapeRegex(OTHER_TOKEN), 'g'),
+            otherName,
+          );
+        } else {
+          // otherName yoksa token'ı temizle
+          rewritten = rewritten.replace(new RegExp(this.escapeRegex(OTHER_TOKEN), 'g'), '');
+        }
+
+        // ==================================================================
+        // PHASE 4 — VALIDATION (targetPov adının çıktıda geçmemesi lazım —
+        // anonymize'den sonra oraya koyacak başka bir yol yok)
+        // ==================================================================
+        const targetNameInOutput = new RegExp(
+          `\\b${this.escapeRegex(targetPov)}\\b`,
+          'i',
+        ).test(rewritten);
+        if (targetNameInOutput) {
+          this.logger.warn(
+            `[pov-rewriter] target name "${targetPov}" leaked into output (model invented it), attempt=${attempt + 1}`,
+          );
+          continue;
+        }
+
+        // Source ile normalize edildiğinde aynı değilse retry.
+        const norm = (s: string) =>
+          s.toLowerCase().replace(/\s+/g, ' ').replace(/[.,!?;:'"()\-—]+/g, '').trim();
+        if (norm(rewritten) === norm(sourceScene)) {
+          this.logger.warn(`[pov-rewriter] output identical to source, attempt=${attempt + 1}`);
+          continue;
+        }
+
+        this.logger.log(
+          `[pov-rewriter] OK target=${targetPov} attempt=${attempt + 1} len=${rewritten.length}`,
+        );
+        return rewritten;
       } catch (err) {
         this.logger.warn(
-          `generatePovPerspective error: ${(err as Error).message}`,
+          `[pov-rewriter] error attempt=${attempt + 1}: ${(err as Error).message}`,
         );
-        if (attempt === 0) continue;
-        return '';
+        if (attempt < maxAttempts - 1) continue;
       }
     }
     return '';
