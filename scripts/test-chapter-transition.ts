@@ -898,38 +898,26 @@ async function runMultiplayer() {
       logLine(`  [${pick.c.id || pick.idx + 1}] (${pick.c.type || '?'}) "${pick.text}"`);
       logLine('');
 
-      // 2. Yeni sahne — HER İKİ taraf da kendi perspective'inde ne görüyor
-      logLine(`◆ ${activePlayer.name}'nın (${activePlayer.language}) gördüğü sahne:`);
-      logLine(`  ${result?.currentScene || '(boş)'}`);
-      logLine('');
-
-      // Karşı oyuncunun gördüğü sahneyi her durumda çek — dil aynı olsa bile
-      // bilingual MODE aktifken perspective farklı olmalı (Erman=you vs Esra=you).
+      // 2. Yeni sahne — HER İKİ taraf da kendi perspective'inde ne görüyor.
+      // /progress endpoint'i üzerinden çek
+      // (controller cascade: scenes.host/guest → scenes[lang] → currentScene).
+      // POST /choice ham progress doc döndürüyor; karşılaştırma için
+      // GET /progress'i her iki user ile ayrı ayrı çağır.
       try {
-        const otherProgress: any = await call(
-          'GET',
-          `/api/multiplayer/${sessionId}/progress`,
-          undefined,
-          otherPlayer.headers,
-        );
-        // Backend controller cascade: aktif oyuncu için `currentScene` her iki rol
-        // için de host POV fallback'i döndürebilir. Gerçek POV farkı `scenes.host`
-        // vs `scenes.guest` veya `scenes[lang]`'de. İkisini de karşılaştır.
-        const activeSceneFields = [
-          result?.currentScene,
-          result?.scenes?.host,
-          result?.scenes?.[activePlayer.language],
-        ].filter(Boolean);
-        const otherSceneFields = [
-          otherProgress?.currentScene,
-          otherProgress?.scenes?.guest,
-          otherProgress?.scenes?.[otherPlayer.language],
-        ].filter(Boolean);
-        const otherScene = otherSceneFields[0] || '(boş)';
-        // Her iki taraf da aynı metin gösteriyorsa POV fail
-        const sameScene = activeSceneFields.some((a: string) =>
-          otherSceneFields.some((b: string) => a === b),
-        );
+        const [activeProg, otherProg]: any[] = await Promise.all([
+          call('GET', `/api/multiplayer/${sessionId}/progress`, undefined, activePlayer.headers),
+          call('GET', `/api/multiplayer/${sessionId}/progress`, undefined, otherPlayer.headers),
+        ]);
+        const activeScene = activeProg?.currentScene || '(boş)';
+        const otherScene = otherProg?.currentScene || '(boş)';
+        const sameScene = activeScene && activeScene === otherScene;
+
+        // Aktif oyuncunun kendi POV sahnesi (önceki "result" yerine)
+        // Log satırını düzenle — aktif oyuncunun sahnesini cascade'den göster
+        logLine(`◆ ${activePlayer.name}'nın (${activePlayer.language}) gördüğü sahne:`);
+        logLine(`  ${activeScene}`);
+        logLine('');
+
         logLine(`◆ ${otherPlayer.name}'nın (${otherPlayer.language}) gördüğü sahne:${sameScene ? ' [⚠ AYNI METİN — perspective değişmemiş!]' : ''}`);
         logLine(`  ${otherScene}`);
         logLine('');
