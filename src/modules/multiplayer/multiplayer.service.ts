@@ -615,6 +615,16 @@ export class MultiplayerService {
     const promptChapterNumber =
       transitionMode === 'entering' ? session.currentChapter + 1 : session.currentChapter;
 
+    // User trajectory — son 5 userChoice (mevcut çağrı dahil), en eski → en yeni.
+    // recentDocs desc sort (en yeni ilk). Önceki user seçimlerinin text'ini
+    // al, bu turn'ün choice.text'ini de sona ekle.
+    const recentUserChoices: string[] = [...recentDocs]
+      .slice(0, 4)
+      .reverse()
+      .map((d: any) => d?.userChoice?.text || '')
+      .filter((t: string) => t && t.trim().length > 0);
+    recentUserChoices.push(choice.text);
+
     let grokResponse: any;
     try {
       grokResponse = await this.aiService.generateEventOrchestrator({
@@ -634,6 +644,7 @@ export class MultiplayerService {
         chapterSummary: promptChapterData?.summary,
         chapterNumber: promptChapterNumber,
         totalChapters,
+        recentUserChoices,
       });
     } catch (err) {
       this.logger.error(

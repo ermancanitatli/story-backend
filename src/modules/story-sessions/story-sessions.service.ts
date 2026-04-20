@@ -412,6 +412,14 @@ export class StorySessionsService {
       totalChapters,
     };
 
+    // USER TRAJECTORY — son 5 userChoice (mevcut dahil), en eski → en yeni
+    const recentUserChoices: string[] = [...recentProgressDocs]
+      .slice(0, 4)
+      .reverse()
+      .map((p: any) => p?.userChoice?.text || p?.userChoice || '')
+      .filter((t: string) => typeof t === 'string' && t.trim().length > 0);
+    if (userChoice && type !== 'start') recentUserChoices.push(userChoice);
+
     // === Grok çağrısı (gerekirse retry) ===
     const systemPrompt = buildSystemPrompt(promptParams);
     const userMessage = buildUserMessage({
@@ -424,6 +432,7 @@ export class StorySessionsService {
       previousChapterBridge,
       currentChapter: promptChapterNumber,
       transitionDirective,
+      recentUserChoices,
     });
 
     let grokResponse = await this.aiService.callGrokAPI({

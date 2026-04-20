@@ -315,6 +315,9 @@ export class AiService {
     chapterSummary?: string;
     chapterNumber?: number;
     totalChapters?: number;
+    // User trajectory: son N seçim — AI niyeti anlayıp hikayeyi o yöne derinleştirsin.
+    // Element sırası en eski → en yeni. Tavsiye: son 3-5 choice.
+    recentUserChoices?: string[];
   }): Promise<GrokResponse> {
     const langInstruction = this.buildSummaryLanguageInstruction(params.languageCode);
 
@@ -365,7 +368,20 @@ export class AiService {
       `  "isEnding": boolean,\n` +
       `  "endingType": "string | null"\n` +
       `}\n` +
-      `Choices must be in ${params.languageCode}. Exactly 4 choices with non-empty text.\n` +
+      `Choices must be in ${params.languageCode}. Exactly 4 choices with non-empty text.\n\n` +
+      `CHOICE DIVERSITY (mandatory — avoid repetitive or near-duplicate options):\n` +
+      `- The 4 choices must represent GENUINELY DIFFERENT next reactions. Each one should\n` +
+      `  lead to a visibly different scene in the next turn (different tone, target, or\n` +
+      `  mechanism) — NOT four rewordings of the same idea.\n` +
+      `- 3 of the 4 choices should AMPLIFY the current user trajectory (see USER TRAJECTORY\n` +
+      `  block in the user message). They explore, deepen, or intensify the dominant\n` +
+      `  direction the user has been pursuing. Each should vary in *how* they do this\n` +
+      `  (e.g. escalate vs. refine vs. branch inward).\n` +
+      `- 1 of the 4 choices MUST be an ALTERNATIVE DIRECTION — a plausible, in-character\n` +
+      `  option that steps aside from the dominant trajectory and opens a different\n` +
+      `  thematic path. It is the user's exit ramp. It should feel natural, not forced.\n` +
+      `- Do NOT label, number, or annotate the choices with their category. The user\n` +
+      `  must not see "(amplify)" or "(pivot)" — only the action text.\n\n` +
       (params.nextPlayerName
         ? `\n⚠️ NEXT-TURN CHOICES RULE:\n` +
           `The "choices" array is for ${params.nextPlayerName} (the player who will act NEXT).\n` +
@@ -432,6 +448,29 @@ export class AiService {
       return '';
     })();
 
+    // USER TRAJECTORY block — son seçimlerden niyet çıkarımı.
+    // AI bu listeyi okur, baskın eğilimi (örn. "yakınlaşma arzusu", "kaçış",
+    // "sorgulama") kendi başına tespit eder. Hard-coded kategori yok.
+    const trajectoryBlock = (() => {
+      const choices = (params.recentUserChoices || [])
+        .map((c) => (c || '').trim())
+        .filter(Boolean);
+      if (choices.length === 0) return '';
+      const lines = choices.map((c, i) => `  ${i + 1}. "${c}"`).join('\n');
+      return (
+        `\n\nUSER TRAJECTORY (most recent first, oldest → newest):\n` +
+        lines +
+        `\n\nInfer the DOMINANT intent behind these choices — the emotional thread, thematic direction,\n` +
+        `or behavioral pattern the user is steering toward. Then:\n` +
+        `  1. Let this intent color the eventChronicle: emphasize consequences, reactions, and sensory\n` +
+        `     details that resonate with the trajectory. Make the world respond to the user's pull.\n` +
+        `  2. Lean harder into the dominant direction with each turn — the story should FEEL like it is\n` +
+        `     becoming about what the user wants. Avoid vanilla neutral beats when the trajectory is clear.\n` +
+        `  3. Apply the CHOICE DIVERSITY rule: 3 choices amplify/deepen this direction (in varied ways),\n` +
+        `     1 choice offers an alternative thematic path.\n`
+      );
+    })();
+
     const userMessage =
       `ACTIVE PLAYER (who just chose): ${params.activePlayerName}\n` +
       `CHOICE TEXT: "${params.choiceText}"\n` +
@@ -441,6 +480,7 @@ export class AiService {
       chapterBlock +
       transitionBlock +
       pacingBlock +
+      trajectoryBlock +
       `\n\nWrite the eventChronicle describing the consequence of this choice.\n` +
       `Then propose exactly 4 "choices" for the NEXT turn` +
       (params.nextPlayerName ? ` — actions ${params.nextPlayerName} will perform.` : '.') +

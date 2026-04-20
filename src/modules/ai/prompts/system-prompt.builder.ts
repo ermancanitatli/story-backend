@@ -239,7 +239,15 @@ ${
 7. Track items gained/lost
 8. Use isEnding=true only when the story reaches a natural conclusion
 9. endingType: victory, defeat, neutral, or cliffhanger
-10. MANDATORY FIELD: effects.suggestChapterTransition MUST be a boolean (true or false). NEVER omit this field. NEVER leave it null. Default false unless pacing instructions below say otherwise.`;
+10. MANDATORY FIELD: effects.suggestChapterTransition MUST be a boolean (true or false). NEVER omit this field. NEVER leave it null. Default false unless pacing instructions below say otherwise.
+
+## Choice design — diversity + trajectory amplification (MANDATORY)
+The 4 choices are the player's next-turn action menu. Follow these rules strictly:
+- Each choice must lead to a VISIBLY different next scene (different tone, target, or mechanism). Never produce four rewordings of the same idea.
+- **3 of the 4 choices** must AMPLIFY the player's dominant trajectory (see USER TRAJECTORY in the user message). They deepen, escalate, or explore the thematic direction the player has been pursuing — in varied ways (e.g. escalate intensity vs. turn inward vs. broaden scope). When the trajectory is clear, lean HARDER into it each turn.
+- **1 of the 4 choices** MUST be an ALTERNATIVE DIRECTION — a plausible, in-character option that steps aside from the dominant trajectory and opens a different thematic path. This is the player's exit ramp to reshape the story. It must feel natural, never forced.
+- Do NOT label, tag, or annotate which choice is amplify vs. alternative. The player sees only the action text.
+- When the user's intent is clear (e.g. pursuit, retreat, curiosity, confrontation), let the currentScene's details (sensory, emotional, environmental) respond to that pull — the world should feel like it is bending toward what the player wants.`;
 
   // === CHAPTER PACING INSTRUCTIONS ===
   if (params.isLastChapter) {
@@ -549,6 +557,9 @@ export function buildUserMessage(params: {
     guestName: string;
     activeName: string;
   };
+  // === User trajectory — intent amplification ===
+  // Son N kullanıcı seçiminin text'i, en eski → en yeni. Boş bırakılırsa blok render edilmez.
+  recentUserChoices?: string[];
 }): string {
   if (params.type === 'start') {
     return 'Begin the story. Set the scene and present the first set of choices.';
@@ -580,6 +591,19 @@ export function buildUserMessage(params: {
           : '## Recent story context:';
       message += `${tierLabel}\n${params.recentHistory.join('\n')}\n\n`;
     }
+  }
+
+  // USER TRAJECTORY — son seçimler, AI niyet çıkarıp hikayeyi o yöne derinleştirsin.
+  const trajectory = (params.recentUserChoices || [])
+    .map((c) => (c || '').trim())
+    .filter(Boolean);
+  if (trajectory.length > 0) {
+    const lines = trajectory.map((c, i) => `  ${i + 1}. "${c}"`).join('\n');
+    message += `## USER TRAJECTORY (oldest → newest)\n${lines}\n\n`;
+    message += `Infer the dominant intent behind these choices (the emotional thread, thematic direction, or behavioral pattern the player is steering toward). Then:\n`;
+    message += `  1. Let this intent color currentScene — emphasize consequences, reactions, and sensory details that resonate with the trajectory. The world should feel like it is bending toward what the player wants.\n`;
+    message += `  2. Lean HARDER into the dominant direction with each turn. Avoid vanilla neutral beats when the trajectory is clear.\n`;
+    message += `  3. Apply the "Choice design" rule strictly: 3 choices amplify/deepen this direction in varied ways, 1 offers an alternative thematic path.\n\n`;
   }
 
   message += `The player chose: "${params.userChoice}"\n\n`;
