@@ -16,8 +16,10 @@ import { ConfigService } from '@nestjs/config';
 import { PresenceService } from '../presence/presence.service';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
 import { MultiplayerService } from '../multiplayer/multiplayer.service';
+import { StoryVoteService } from '../multiplayer/story-vote.service';
 import { FakeMatchOrchestrator } from '../fake-users/fake-match-orchestrator.service';
 import { User } from '../users/schemas/user.schema';
+import { ErrorCodes } from '../../common/filters/error-codes';
 
 @WebSocketGateway({ cors: true })
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -28,6 +30,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private presenceService: PresenceService,
     private matchmakingService: MatchmakingService,
     @Inject(forwardRef(() => MultiplayerService)) private multiplayerService: MultiplayerService,
+    @Inject(forwardRef(() => StoryVoteService)) private storyVoteService: StoryVoteService,
     @Inject(forwardRef(() => FakeMatchOrchestrator)) private fakeMatchOrchestrator: FakeMatchOrchestrator,
     private jwtService: JwtService,
     private configService: ConfigService,
@@ -169,24 +172,29 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!partnerId) return;
 
     if (entry.status === 'completed') {
-      // Both accepted -> create multiplayer session
-      // Her iki oyuncunun dil bilgisini matchmaking queue'dan al
+      // Both accepted -> create multiplayer session in the story-voting phase.
+      // `matchmaking:completed` ARTIK BURADA GÖNDERİLMEZ — oylama bitince
+      // StoryVoteService gönderir. Anlamı değişmedi: "oyun hazır, gameplay'e geç".
       const partnerEntry = await this.matchmakingService.getQueueEntry(partnerId);
       const hostLang = entry.languageCode || 'en';
       const guestLang = partnerEntry?.languageCode || 'en';
 
-      const session = await this.multiplayerService.createSessionFromMatchmaking(
-        userId,
-        partnerId,
-        hostLang,
-        guestLang,
-      );
-      const sessionId = session._id.toString();
-
-      await this.matchmakingService.setSessionId(userId, partnerId, sessionId);
-
-      client.emit('matchmaking:completed', { sessionId });
-      this.server.to(`matchmaking:${partnerId}`).emit('matchmaking:completed', { sessionId });
+      // Bu blokta atılan HER hata iki istemciyi de "eşleşti" ekranında sonsuza
+      // kadar asılı bırakırdı: burası socket yolu, yakalanacak bir HTTP yanıtı yok.
+      // NO_ACCESSIBLE_STORIES bunun en sık örneği.
+      try {
+        const session = await this.multiplayerService.createSessionFromMatchmaking(
+          userId,
+          partnerId,
+          hostLang,
+          guestLang,
+        );
+        const sessionId = session._id.toString();
+        await this.matchmakingService.setSessionId(userId, partnerId, sessionId);
+        await this.storyVoteService.begin(session);
+      } catch (err) {
+        this.emitMatchmakingError(userId, partnerId, err);
+      }
     } else {
       // Partner hasn't accepted yet
       this.server.to(`matchmaking:${partnerId}`).emit('matchmaking:partner-accepted', {});
@@ -223,6 +231,72 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.fakeMatchOrchestrator.cancelTimer(userId);
   }
 
+  /**
+   * Eşleşme kurulamadıysa iki tarafa da açıkça bildir.
+   * `NO_ACCESSIBLE_STORIES` gibi hatalar burada görünür olmalı; aksi halde
+   * istemci beklemeye devam eder.
+   */
+  private emitMatchmakingError(userId: string, partnerId: string, err: unknown): void {
+    const response = (err as any)?.getResponse?.();
+    const code = response?.code ?? ErrorCodes.INTERNAL_ERROR;
+    const message = response?.message ?? (err as Error)?.message ?? 'Matchmaking failed';
+    this.logger.error(`Matchmaking session creation failed (${userId} <-> ${partnerId}): ${message}`);
+    // İKİ tarafa da gitmeli — yalnızca hatayı tetikleyene gönderilirse diğeri asılı kalır.
+    this.emitToUser(userId, 'matchmaking:error', { sessionId: null, code, message });
+    this.emitToUser(partnerId, 'matchmaking:error', { sessionId: null, code, message });
+  }
+
+  // ─── Hikaye oylaması ────────────────────────────────────────
+
+  /**
+   * Oyuncunun hikaye oyu. İlk oy geçerlidir; ikinci gönderim mevcut oyu
+   * `alreadyVoted: true` ile geri döndürür (idempotent).
+   */
+  @SubscribeMessage('matchmaking:story-vote')
+  async handleStoryVote(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string; storyId: string },
+  ) {
+    const userId = this.getUserId(client);
+    if (!userId) return;
+    if (!data?.sessionId || !data?.storyId) {
+      client.emit('matchmaking:story-vote-rejected', {
+        sessionId: data?.sessionId ?? null,
+        reason: 'INVALID_PAYLOAD',
+      });
+      return;
+    }
+
+    const result = await this.storyVoteService.castVote(data.sessionId, userId, data.storyId);
+    if (result.ok) {
+      client.emit('matchmaking:story-vote-accepted', {
+        sessionId: data.sessionId,
+        storyId: result.storyId,
+        alreadyVoted: result.alreadyVoted,
+      });
+    } else {
+      client.emit('matchmaking:story-vote-rejected', {
+        sessionId: data.sessionId,
+        reason: result.reason,
+      });
+    }
+  }
+
+  /**
+   * Yeniden bağlanan istemci oylama durumunu ister.
+   * Sunucu duruma göre `story-vote-started`, `story-vote-result` ve/veya
+   * `matchmaking:completed` gönderir.
+   */
+  @SubscribeMessage('matchmaking:story-vote-state')
+  async handleStoryVoteState(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string },
+  ) {
+    const userId = this.getUserId(client);
+    if (!userId || !data?.sessionId) return;
+    await this.storyVoteService.emitStateTo(data.sessionId, userId);
+  }
+
   // ─── Multiplayer ────────────────────────────────────────────
 
   @SubscribeMessage('multiplayer:join')
@@ -237,6 +311,17 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // ─── Emit helpers (called from services / controllers) ─────
+
+  /**
+   * Kişisel oda üzerinden tek kullanıcıya event gönder.
+   *
+   * `matchmaking:{userId}` yerine `user:{userId}` kullanılır: kişisel odaya
+   * her bağlantıda otomatik girilir, dolayısıyla socket koptuktan sonra
+   * yeniden bağlanan istemci de mesajı almaya devam eder.
+   */
+  emitToUser(userId: string, event: string, payload: any) {
+    this.server.to(`user:${userId}`).emit(event, payload);
+  }
 
   emitSessionUpdate(sessionId: string, session: any) {
     this.server.to(`mp:${sessionId}`).emit('multiplayer:session-update', session);

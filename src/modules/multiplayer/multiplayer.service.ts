@@ -24,6 +24,11 @@ import {
   normalizeLocale,
   turnNotificationTexts,
 } from './helpers/turn-notification.texts';
+import {
+  pickDiverseCandidates,
+  STORY_VOTE_CANDIDATE_COUNT,
+  STORY_VOTE_WINDOW_MS,
+} from './helpers/story-vote.helpers';
 
 // === Chapter pacing constants (singleplayer ile aynı değerler) ===
 const MIN_STEPS_PER_CHAPTER = 5;
@@ -160,10 +165,14 @@ export class MultiplayerService {
   }
 
   /**
-   * Matchmaking sonrası session oluştur.
-   * Kullanıcı profillerinden isim/cinsiyet otomatik alınır,
-   * rastgele hikaye seçilir ve doğrudan 'playing' phase'inde başlatılır.
-   * İlk AI sahnesi arka planda üretilir.
+   * Matchmaking sonrası session oluştur — HİKAYE OYLAMASI fazında.
+   *
+   * Kullanıcı profillerinden isim/cinsiyet otomatik alınır. Hikaye artık burada
+   * rastgele SEÇİLMEZ; iki oyuncunun da erişebildiği havuzdan çeşitli 3 aday
+   * belirlenir ve oturum `story-voting` fazında açılır. İlk AI sahnesi oylama
+   * sonuçlandıktan sonra (`applyVotedStory`) üretilir.
+   *
+   * Ürün gerekçesi: rastgele atanan tema oyuncuyu ilk turdan terk ettiriyordu.
    */
   async createSessionFromMatchmaking(
     hostId: string,
@@ -182,12 +191,11 @@ export class MultiplayerService {
     const hostGender = hostUser?.appSettings?.extra?.multiplayerGender || 'male';
     const guestGender = guestUser?.appSettings?.extra?.multiplayerGender || 'female';
 
-    // Rastgele hikaye seç — SADECE iki oyuncunun da erişebildiği havuzdan.
+    // Oylama havuzu — SADECE iki oyuncunun da erişebildiği hikayeler.
     //
     // Ürün kararı: havuz = ücretsiz hikayeler + İKİSİNİN de açtıkları.
-    // Böylece "eşleş, oyna, sonra ödeyememe" ölü ucu hiç oluşmaz. Ayrıca eski
-    // davranıştaki sızıntı da kapanır: matchmaking ücretli hikayeleri kimseye
-    // ücret yansıtmadan dağıtıyordu.
+    // Böylece "eşleş, oyna, sonra ödeyememe" ölü ucu hiç oluşmaz. Kilitli bir
+    // hikaye oylamaya girseydi oyuncu oy verip ödeyemediği içeriğe düşerdi.
     const result = await this.storiesService.findAll({ page: 1, limit: 50 });
     const stories = result.data;
     if (!stories || stories.length === 0) {
@@ -211,21 +219,16 @@ export class MultiplayerService {
       });
     }
 
-    const picked = pool[Math.floor(Math.random() * pool.length)];
-    const storyId = picked._id as Types.ObjectId;
-    const storyClone = {
-      title: picked.title,
-      genre: picked.genre,
-      summary: picked.summary,
-      characters: picked.characters,
-      chapters: picked.chapters,
-    };
+    // Çeşitli adaylar — aynı kategoriden 3 tane gelmesin diye kategori bazlı
+    // round-robin. Havuz 3'ten küçükse olan kadarı sunulur.
+    const candidates = pickDiverseCandidates(pool, STORY_VOTE_CANDIDATE_COUNT);
+    const now = new Date();
 
     const session = await this.sessionModel.create({
       hostId: new Types.ObjectId(hostId),
       guestId: new Types.ObjectId(guestId),
-      storyId,
-      phase: 'playing',
+      // storyId oylama sonuçlanınca yazılır.
+      phase: 'story-voting',
       activePlayerId: new Types.ObjectId(hostId),
       nextPlayerId: new Types.ObjectId(guestId),
       hostName,
@@ -236,18 +239,76 @@ export class MultiplayerService {
       guestAccepted: true,
       hostLanguageCode: hostLanguage || 'en',
       guestLanguageCode: guestLanguage || 'en',
-      storyClone,
       emotionalStates: { intimacy: 0, anger: 0, worry: 0, trust: 0, excitement: 0, sadness: 0 },
+      storyVote: {
+        candidateStoryIds: candidates.map((s) => String(s._id)),
+        startedAt: now,
+        deadlineAt: new Date(now.getTime() + STORY_VOTE_WINDOW_MS),
+        hostVote: null,
+        guestVote: null,
+        hostVotedAt: null,
+        guestVotedAt: null,
+        hostVoteAuto: false,
+        guestVoteAuto: false,
+        resolution: null,
+        resolvedStoryId: null,
+        resolvedAt: null,
+      },
     });
 
-    // İlk AI sahnesini senkron üret — iOS session fetch ettiğinde progress hazır olur
+    this.logger.log(
+      `[vote] session ${session._id} opened with ${candidates.length} candidate(s) ` +
+        `from a pool of ${pool.length}`,
+    );
+
+    return session;
+  }
+
+  /**
+   * Oylama sonucu belli olduktan sonra oturumu oyuna geçir.
+   *
+   * Hikayeyi klonlar, phase'i 'playing' yapar ve ilk AI sahnesini üretir.
+   * `phase: 'story-voting'` koşuluyla atomik güncellenir — iki kez çağrılırsa
+   * (timeout + son oy yarışı) ikincisi sessizce mevcut oturumu döner, ikinci
+   * bir AI çağrısı yapılmaz.
+   */
+  async applyVotedStory(sessionId: string, storyId: string): Promise<MultiplayerSession> {
+    const story = await this.storiesService.findById(storyId);
+    const storyClone = {
+      title: story.title,
+      genre: story.genre,
+      summary: story.summary,
+      characters: story.characters,
+      chapters: story.chapters,
+    };
+
+    const session = await this.sessionModel.findOneAndUpdate(
+      { _id: new Types.ObjectId(sessionId), phase: 'story-voting' },
+      {
+        $set: {
+          storyId: new Types.ObjectId(storyId),
+          storyClone,
+          phase: 'playing',
+        },
+      },
+      { new: true },
+    );
+
+    if (!session) {
+      // Başka bir çağrı zaten oyuna geçirmiş — idempotent davran.
+      this.logger.warn(`[vote] applyVotedStory no-op for ${sessionId} (already out of voting)`);
+      return this.getSession(sessionId);
+    }
+
     try {
       await this.generateInitialScene(session);
     } catch (err) {
-      this.logger.error(`Initial scene generation failed for session ${session._id}: ${(err as Error).message}`);
+      this.logger.error(
+        `Initial scene generation failed for session ${sessionId}: ${(err as Error).message}`,
+      );
     }
 
-    return session;
+    return this.getSession(sessionId);
   }
 
   /**

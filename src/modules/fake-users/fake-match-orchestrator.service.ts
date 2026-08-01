@@ -13,6 +13,7 @@ import { FakeUsersService } from './fake-users.service';
 import { AppSettingsService } from '../app-settings/app-settings.service';
 import { AppGateway } from '../socket/app.gateway';
 import { MultiplayerService } from '../multiplayer/multiplayer.service';
+import { StoryVoteService } from '../multiplayer/story-vote.service';
 
 @Injectable()
 export class FakeMatchOrchestrator implements OnModuleDestroy {
@@ -28,6 +29,8 @@ export class FakeMatchOrchestrator implements OnModuleDestroy {
     @Inject(forwardRef(() => AppGateway)) private appGateway: AppGateway,
     @Inject(forwardRef(() => MultiplayerService))
     private multiplayerService: MultiplayerService,
+    @Inject(forwardRef(() => StoryVoteService))
+    private storyVoteService: StoryVoteService,
   ) {}
 
   onModuleDestroy() {
@@ -195,13 +198,29 @@ export class FakeMatchOrchestrator implements OnModuleDestroy {
             // Fake user da aynı dili kullanır (gerçek kullanıcının dilinde konuşmalı)
             const fakeLanguage = realLanguage;
 
-            const session =
-              await this.multiplayerService.createSessionFromMatchmaking(
+            let session;
+            try {
+              session = await this.multiplayerService.createSessionFromMatchmaking(
                 realUserId,
                 fakeUserId,
                 realLanguage,
                 fakeLanguage,
               );
+            } catch (err) {
+              // Oturum açılamazsa (ör. erişilebilir hikaye yok) gerçek kullanıcı
+              // "eşleşti" ekranında asılı kalmasın.
+              const response = (err as any)?.getResponse?.();
+              this.appGateway.emitToUser(realUserId, 'matchmaking:error', {
+                sessionId: null,
+                code: response?.code ?? 'INTERNAL_ERROR',
+                message: response?.message ?? (err as Error).message,
+              });
+              this.logger.error(
+                `Fake session creation failed for ${realUserId}: ${(err as Error).message}`,
+              );
+              return;
+            }
+
             const sessionId = session._id.toString();
 
             await this.matchmakingService.setSessionId(
@@ -210,12 +229,12 @@ export class FakeMatchOrchestrator implements OnModuleDestroy {
               sessionId,
             );
 
-            this.appGateway.server
-              .to(`matchmaking:${realUserId}`)
-              .emit('matchmaking:completed', { sessionId });
+            // Hikaye oylaması başlar; `matchmaking:completed` oylama bitince
+            // StoryVoteService tarafından gönderilir. Bot'un oyu da orada planlanır.
+            await this.storyVoteService.begin(session);
 
             this.logger.log(
-              `Fake acceptance completed: ${realUserId} <-> ${fakeUserId}, session: ${sessionId}`,
+              `Fake acceptance completed: ${realUserId} <-> ${fakeUserId}, session: ${sessionId} (story vote started)`,
             );
           } else {
             // Gerçek kullanıcı henüz kabul etmedi, sadece partner-accepted bildir

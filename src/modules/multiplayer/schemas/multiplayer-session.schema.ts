@@ -12,7 +12,18 @@ export class MultiplayerSession extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Story' })
   storyId?: Types.ObjectId;
 
-  @Prop({ enum: ['invite', 'character-selection', 'playing', 'ended', 'aborted'], default: 'invite' })
+  /**
+   * 'story-voting' — matchmaking sonrası hikaye oylaması penceresi.
+   * Davet (invite) akışında KULLANILMAZ: orada host hikayeyi bilerek seçmiştir.
+   * 'character-selection' ile birleştirilmedi çünkü o değer davet akışında hâlâ
+   * canlı (updateSessionField: invite → character-selection → playing); aynı
+   * enum değerine iki farklı anlam yüklemek istemciyi akışa göre tahmin
+   * yürütmeye zorlardı.
+   */
+  @Prop({
+    enum: ['invite', 'character-selection', 'story-voting', 'playing', 'ended', 'aborted'],
+    default: 'invite',
+  })
   phase: string;
 
   @Prop({ type: Types.ObjectId, ref: 'User' })
@@ -49,7 +60,11 @@ export class MultiplayerSession extends Document {
   @Prop() turnStartedAt?: Date;
   // Hatırlatma gönderildiği an. null/eksik = henüz gönderilmedi.
   // Her sıra değişiminde null'a çekilir → oturum başına değil, sıra başına tek hatırlatma.
-  @Prop({ default: null }) turnReminderSentAt?: Date | null;
+  // ⚠️ `type: Date` ZORUNLU: `Date | null` union'ında TS `design:type` olarak
+  // `Object` yayar, @nestjs/mongoose de tipi çıkaramayıp @Prop dekoratöründe
+  // CannotDetermineTypeError fırlatır. Bu hata derleme değil YÜKLEME zamanında
+  // olur — `npm run build` temiz geçer, uygulama açılışta patlar.
+  @Prop({ type: Date, default: null }) turnReminderSentAt?: Date | null;
   // "Sıra sende" push'unun gönderildiği turnOrder — cross-instance idempotency claim'i.
   @Prop({ default: 0 }) turnNotifiedForTurn?: number;
 
@@ -96,6 +111,35 @@ export class MultiplayerSession extends Document {
     dominantEmotion: string;
   };
 
+  /**
+   * Hikaye oylaması durumu (yalnızca matchmaking akışı).
+   *
+   * Tek doküman içinde tutuluyor çünkü hem oyun mantığının hem de yeniden
+   * bağlanan istemcinin ihtiyacı olan her şey burada: adaylar, bitiş anı,
+   * kimin ne oy verdiği ve sonucun nasıl belirlendiği. Timer bellekte ama
+   * DOĞRULUK bu alanlarda — süreç yeniden başlarsa cron süpürgesi
+   * `deadlineAt` + `resolvedAt` bakarak oylamayı tamamlar.
+   *
+   * `resolvedAt` aynı zamanda mutual-exclusion claim'idir: hem "iki oy da
+   * geldi" hem "süre doldu" yolu aynı anda tetiklenirse yalnızca biri kazanır.
+   */
+  @Prop({ type: Object, default: null })
+  storyVote?: {
+    candidateStoryIds: string[];
+    startedAt: Date;
+    deadlineAt: Date;
+    hostVote?: string | null;
+    guestVote?: string | null;
+    hostVotedAt?: Date | null;
+    guestVotedAt?: Date | null;
+    /** true = oyu oyuncu vermedi, süre dolunca sunucu rastgele attı. */
+    hostVoteAuto?: boolean;
+    guestVoteAuto?: boolean;
+    resolution?: 'agreement' | 'tiebreak' | 'timeout' | 'only-option' | null;
+    resolvedStoryId?: string | null;
+    resolvedAt?: Date | null;
+  } | null;
+
   // Son N turn'de AI'ın kullandığı beat/flavor/disruptor — recency avoidance.
   // Backend push/shift ile ring buffer (son 4 element).
   @Prop({ type: [String], default: [] }) recentBeats?: string[];
@@ -109,3 +153,5 @@ MultiplayerSessionSchema.index({ hostId: 1, phase: 1 });
 MultiplayerSessionSchema.index({ guestId: 1, phase: 1 });
 // Sessizlik hatırlatması cron'u: phase='playing' + hatırlatma gönderilmemiş + turnStartedAt penceresi
 MultiplayerSessionSchema.index({ phase: 1, turnReminderSentAt: 1, turnStartedAt: 1 });
+// Süresi geçmiş oylama süpürgesi: phase='story-voting' + deadlineAt penceresi
+MultiplayerSessionSchema.index({ phase: 1, 'storyVote.deadlineAt': 1 });

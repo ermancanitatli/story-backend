@@ -1,5 +1,6 @@
 import { Injectable, Logger, Inject, forwardRef, OnModuleDestroy } from '@nestjs/common';
 import { MultiplayerService } from '../multiplayer/multiplayer.service';
+import { StoryVoteService } from '../multiplayer/story-vote.service';
 import { AppGateway } from '../socket/app.gateway';
 import { UsersService } from '../users/users.service';
 
@@ -10,9 +11,44 @@ export class FakeMoveService implements OnModuleDestroy {
 
   constructor(
     @Inject(forwardRef(() => MultiplayerService)) private multiplayerService: MultiplayerService,
+    @Inject(forwardRef(() => StoryVoteService)) private storyVoteService: StoryVoteService,
     @Inject(forwardRef(() => AppGateway)) private appGateway: AppGateway,
     private usersService: UsersService,
   ) {}
+
+  /**
+   * Fake user'ın hikaye oyunu planla.
+   *
+   * Bot oy vermezse her fake eşleşme 25 sn zaman aşımına düşer ve sonuç
+   * "süre doldu" olur — oyuncu karşısında bir insan olmadığını hemen anlar.
+   *
+   * Gecikme hamleden (3-8 sn) daha uzun: üç hikaye kartını okuyup seçmek
+   * bir seçenek tıklamaktan uzun sürer. Pencerenin (25 sn) içinde kalır.
+   */
+  scheduleFakeVote(sessionId: string, fakeUserId: string, candidateStoryIds: string[]): void {
+    if (!candidateStoryIds?.length) return;
+
+    const timerKey = `vote:${sessionId}:${fakeUserId}`;
+    if (this.timers.has(timerKey)) return;
+
+    const delay = 5_000 + Math.floor(Math.random() * 7_000); // 5-12 sn
+    const timer = setTimeout(async () => {
+      this.timers.delete(timerKey);
+      try {
+        const storyId = candidateStoryIds[Math.floor(Math.random() * candidateStoryIds.length)];
+        const result = await this.storyVoteService.castVote(sessionId, fakeUserId, storyId);
+        this.logger.log(
+          `Fake vote: session=${sessionId}, story=${storyId}, ok=${result.ok}`,
+        );
+      } catch (err) {
+        // Bot oy veremezse oylama zaman aşımıyla yine sonuçlanır.
+        this.logger.error(`Fake vote failed for session ${sessionId}: ${(err as Error).message}`);
+      }
+    }, delay);
+
+    this.timers.set(timerKey, timer);
+    this.logger.debug(`Scheduled fake vote for session ${sessionId} in ${delay}ms`);
+  }
 
   /**
    * Fake user'ın sırası geldiğinde otomatik hamle planla.

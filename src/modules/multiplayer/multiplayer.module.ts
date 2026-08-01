@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MultiplayerController } from './multiplayer.controller';
 import { MultiplayerService } from './multiplayer.service';
+import { StoryVoteService } from './story-vote.service';
 import { MultiplayerReminderScheduler } from './multiplayer-reminder.scheduler';
 import { MultiplayerSession, MultiplayerSessionSchema } from './schemas/multiplayer-session.schema';
 import { MultiplayerProgress, MultiplayerProgressSchema } from './schemas/multiplayer-progress.schema';
@@ -30,7 +31,7 @@ import { NotificationModule } from '../notifications/notification.module';
     forwardRef(() => FakeUsersModule),
   ],
   controllers: [MultiplayerController],
-  providers: [MultiplayerService, MultiplayerReminderScheduler],
-  exports: [MultiplayerService],
+  providers: [MultiplayerService, StoryVoteService, MultiplayerReminderScheduler],
+  exports: [MultiplayerService, StoryVoteService],
 })
 export class MultiplayerModule {}
