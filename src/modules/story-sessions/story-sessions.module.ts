@@ -1,23 +1,15 @@
 import { Module } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
 import { StorySessionsController } from './story-sessions.controller';
-import { StorySessionsService } from './story-sessions.service';
-import { StorySession, StorySessionSchema } from './schemas/story-session.schema';
-import { StoryProgress, StoryProgressSchema } from './schemas/story-progress.schema';
-import { StoriesModule } from '../stories/stories.module';
-import { AiModule } from '../ai/ai.module';
 
+/**
+ * Singleplayer modülü kaldırıldı — geriye sadece 410 Gone döndüren
+ * tombstone controller kaldı. Service, DTO'lar ve Mongoose kaydı silindi.
+ *
+ * Şema dosyaları (schemas/story-session.schema.ts, schemas/story-progress.schema.ts)
+ * korunuyor: StoriesModule ve PanelModule kendi MongooseModule.forFeature
+ * kayıtlarını yapıp okuma amaçlı kullanıyor.
+ */
 @Module({
-  imports: [
-    MongooseModule.forFeature([
-      { name: StorySession.name, schema: StorySessionSchema },
-      { name: StoryProgress.name, schema: StoryProgressSchema },
-    ]),
-    StoriesModule,
-    AiModule,
-  ],
   controllers: [StorySessionsController],
-  providers: [StorySessionsService],
-  exports: [StorySessionsService],
 })
 export class StorySessionsModule {}

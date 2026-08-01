@@ -9,6 +9,7 @@ import { AiModule } from '../ai/ai.module';
 import { UsersModule } from '../users/users.module';
 import { SocketModule } from '../socket/socket.module';
 import { FakeUsersModule } from '../fake-users/fake-users.module';
+import { PresenceModule } from '../presence/presence.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { FakeUsersModule } from '../fake-users/fake-users.module';
     StoriesModule,
     AiModule,
     UsersModule,
+    PresenceModule,
     forwardRef(() => SocketModule),
     forwardRef(() => FakeUsersModule),
   ],

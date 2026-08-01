@@ -5,13 +5,89 @@ import { MultiplayerSession } from './schemas/multiplayer-session.schema';
 import { MultiplayerProgress } from './schemas/multiplayer-progress.schema';
 import { StoriesService } from '../stories/stories.service';
 import { AiService } from '../ai/ai.service';
-import { buildSystemPrompt } from '../ai/prompts/system-prompt.builder';
 import { UsersService } from '../users/users.service';
+import { PresenceService } from '../presence/presence.service';
+import { getTranslation } from '../stories/helpers/translation.helper';
+import { Story } from '../stories/schemas/story.schema';
+import { DEFAULT_LOCALE } from '../../shared/constants/locales';
 
 // === Chapter pacing constants (singleplayer ile aynı değerler) ===
 const MIN_STEPS_PER_CHAPTER = 5;
 const SOFT_STEPS_PER_CHAPTER = 7;
 const MAX_STEPS_PER_CHAPTER = 10;
+
+// === Lobby constants ===
+const LOBBY_MAX_SESSIONS = 50;
+const LOBBY_SCENE_SNIPPET_LENGTH = 80;
+
+/**
+ * Lobi satırı — iOS ana ekranın "devam eden oyunlar" kartı.
+ * Alan adları sözleşmedir; değiştirmeden önce iOS modelini güncelle.
+ */
+export interface LobbyItem {
+  sessionId: string;
+  phase: string; // 'invite' | 'playing'
+  currentChapter: number;
+  updatedAt: Date | null;
+  isMyTurn: boolean;
+  story: {
+    id: string | null;
+    title: string;
+    coverImage: string | null; // ilk görünür cover görselinin URL'i
+  };
+  partner: {
+    id: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    isOnline: boolean;
+  };
+  lastSceneSummary: string | null;
+}
+
+/**
+ * Story cover görseli: gizli olmayanlar arasında en düşük order'lı olanın URL'i.
+ */
+function pickCoverImageUrl(story: Story): string | null {
+  const covers = (story.coverImage || []).filter((m) => m && !m.hidden && m.url);
+  if (covers.length === 0) return null;
+  const sorted = [...covers].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  return sorted[0].url ?? null;
+}
+
+/**
+ * Son sahne özeti:
+ *   1) progress.eventSummary (AI'ın ürettiği nötr olay özeti)
+ *   2) yoksa kullanıcının diline/rolüne göre sahne metninin ilk ~80 karakteri
+ *
+ * scenes map'i iki şekilde gelebilir (bkz. multiplayer.controller getProgress):
+ *   - same-language dual POV → { host, guest }
+ *   - bilingual              → { tr, en, ... }
+ */
+function buildLastSceneSummary(
+  progress: { eventSummary?: string; currentScene?: string; scenes?: Record<string, string> } | undefined,
+  isHost: boolean,
+  locale: string,
+): string | null {
+  if (!progress) return null;
+  if (progress.eventSummary?.trim()) return progress.eventSummary.trim();
+
+  const scenes = progress.scenes;
+  let scene = progress.currentScene;
+
+  if (scenes && typeof scenes === 'object') {
+    if (scenes.host || scenes.guest) {
+      scene = (isHost ? scenes.host : scenes.guest) || scenes.host || scenes.guest || scene;
+    } else {
+      scene = scenes[locale] || Object.values(scenes)[0] || scene;
+    }
+  }
+
+  const text = scene?.trim();
+  if (!text) return null;
+  return text.length > LOBBY_SCENE_SNIPPET_LENGTH
+    ? `${text.slice(0, LOBBY_SCENE_SNIPPET_LENGTH).trimEnd()}…`
+    : text;
+}
 
 @Injectable()
 export class MultiplayerService {
@@ -39,6 +115,7 @@ export class MultiplayerService {
     private storiesService: StoriesService,
     private aiService: AiService,
     private usersService: UsersService,
+    private presenceService: PresenceService,
   ) {}
 
   async createSession(hostId: string, guestId: string, storyId: string): Promise<MultiplayerSession> {
@@ -262,6 +339,127 @@ export class MultiplayerService {
   }
 
   /**
+   * LOBİ — ana ekranın "devam eden oyunlar" listesi.
+   *
+   * Tek çağrıda session + story + partner + son sahne özetini birleştirir;
+   * istemci her satır için ayrı ayrı /multiplayer/:id, /stories/:id,
+   * /users/:id/public çağırmak zorunda kalmaz.
+   *
+   * Performans: N+1 YOK. Session'lar çekilir, storyId/partnerId setleri
+   * toplanır, 3 toplu sorgu paralel koşar:
+   *   1) stories  → findByIds ($in)
+   *   2) users    → findByIds ($in)
+   *   3) progress → tek aggregate, {sessionId:1, turnOrder:-1} index'i üstünde
+   *                 $group + $first ile her session'ın SON turn'ü
+   *
+   * Sıralama: önce isMyTurn=true, sonra updatedAt azalan.
+   */
+  async getLobby(userId: string): Promise<LobbyItem[]> {
+    const oid = new Types.ObjectId(userId);
+
+    const sessions = await this.sessionModel
+      .find({
+        $or: [{ hostId: oid }, { guestId: oid }],
+        phase: { $in: ['invite', 'playing'] },
+      })
+      .sort({ updatedAt: -1 })
+      .limit(LOBBY_MAX_SESSIONS)
+      .lean()
+      .exec();
+
+    if (sessions.length === 0) return [];
+
+    const sessionIds = sessions.map((s) => s._id as Types.ObjectId);
+    const storyIds: string[] = [];
+    const partnerIds: string[] = [];
+
+    for (const s of sessions) {
+      if (s.storyId) storyIds.push(s.storyId.toString());
+      const isHost = s.hostId?.toString() === userId;
+      const partnerId = isHost ? s.guestId : s.hostId;
+      if (partnerId) partnerIds.push(partnerId.toString());
+    }
+
+    const [stories, partners, lastProgresses] = await Promise.all([
+      this.storiesService.findByIds(storyIds),
+      this.usersService.findByIds(partnerIds),
+      this.progressModel
+        .aggregate<{
+          _id: Types.ObjectId;
+          eventSummary?: string;
+          currentScene?: string;
+          scenes?: Record<string, string>;
+        }>([
+          { $match: { sessionId: { $in: sessionIds } } },
+          { $sort: { sessionId: 1, turnOrder: -1 } },
+          {
+            $group: {
+              _id: '$sessionId',
+              eventSummary: { $first: '$eventSummary' },
+              currentScene: { $first: '$currentScene' },
+              scenes: { $first: '$scenes' },
+            },
+          },
+        ])
+        .exec(),
+    ]);
+
+    const storyMap = new Map(stories.map((s) => [(s._id as Types.ObjectId).toString(), s]));
+    const partnerMap = new Map(partners.map((u) => [(u._id as Types.ObjectId).toString(), u]));
+    const progressMap = new Map(lastProgresses.map((p) => [p._id.toString(), p]));
+
+    const items: LobbyItem[] = sessions.map((s) => {
+      const isHost = s.hostId?.toString() === userId;
+      const partnerId = (isHost ? s.guestId : s.hostId)?.toString() ?? '';
+      const partner = partnerMap.get(partnerId);
+
+      // Dil: session'a yazılan oyuncu dili otoritedir (sahneler o dilde üretildi).
+      const locale =
+        (isHost ? s.hostLanguageCode : s.guestLanguageCode) ||
+        partner?.appSettings?.language ||
+        DEFAULT_LOCALE;
+
+      const story = s.storyId ? storyMap.get(s.storyId.toString()) : undefined;
+      const progress = progressMap.get((s._id as Types.ObjectId).toString());
+
+      return {
+        sessionId: (s._id as Types.ObjectId).toString(),
+        phase: s.phase,
+        currentChapter: s.currentChapter ?? 1,
+        updatedAt: ((s as any).updatedAt ?? (s as any).createdAt ?? null) as Date | null,
+        isMyTurn: s.activePlayerId?.toString() === userId,
+        story: {
+          id: s.storyId ? s.storyId.toString() : null,
+          // translations[locale] → translations.en → flat title → storyClone.title
+          title: story
+            ? getTranslation(story, locale, 'title')
+            : ((s.storyClone as any)?.title ?? ''),
+          coverImage: story ? pickCoverImageUrl(story) : null,
+        },
+        partner: {
+          id: partnerId,
+          displayName: partner?.displayName || partner?.userHandle || null,
+          avatarUrl: partner?.photoURL || partner?.photoThumbnailURL || null,
+          // Presence iki kaynaktan: in-memory map (bu instance'ın socket'leri) +
+          // users.online (cluster genelinde yazılır, fake user'lar da buradan).
+          isOnline: partnerId
+            ? this.presenceService.isOnline(partnerId) || partner?.online === true
+            : false,
+        },
+        lastSceneSummary: buildLastSceneSummary(progress, isHost, locale),
+      };
+    });
+
+    // isMyTurn önce, sonra updatedAt azalan.
+    return items.sort((a, b) => {
+      if (a.isMyTurn !== b.isMyTurn) return a.isMyTurn ? -1 : 1;
+      const at = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const bt = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return bt - at;
+    });
+  }
+
+  /**
    * Multiplayer session'ları sil (kullanıcı yetki kontrolüyle).
    */
   async deleteSessions(userId: string, sessionIds: string[]): Promise<number> {
@@ -456,8 +654,9 @@ export class MultiplayerService {
     // ==========================================================================
     // 3-CALL PIPELINE — Call 1: Event Orchestrator (neutral chronicle + choices)
     // ==========================================================================
-    // NOT: buildSystemPrompt çağırmıyoruz — içindeki 2. şahıs "sen" ve dual POV
-    // talimatları orchestrator'ı kirletiyor. Minimal POV-FREE context kuruyoruz.
+    // NOT: Singleplayer'ın buildSystemPrompt'u (2. şahıs "sen" + dual POV talimatları)
+    // orchestrator'ı kirlettiği için hiç kullanılmıyordu; singleplayer kaldırılırken
+    // o prompt builder da silindi. Burada minimal POV-FREE context kuruyoruz.
     const charactersBlock = ((clone.characters || []) as any[])
       .map((c: any) => {
         const name = c.name || 'Unknown';

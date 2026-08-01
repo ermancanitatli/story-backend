@@ -1,5 +1,5 @@
 import { Controller, Post, Get, Patch, Param, Body, Inject, forwardRef } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiOkResponse } from '@nestjs/swagger';
 import { MultiplayerService } from './multiplayer.service';
 import { AppGateway } from '../socket/app.gateway';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -44,6 +44,56 @@ export class MultiplayerController {
   ) {
     const deleted = await this.multiplayerService.deleteSessions(user.sub, body.sessionIds);
     return { deleted };
+  }
+
+  /**
+   * ⚠️ ROUTE SIRASI: Bu handler @Get(':id')'den ÖNCE tanımlı kalmalı.
+   * Aşağı taşınırsa Nest 'lobby' string'ini :id parametresi sanar ve
+   * ParseObjectIdPipe 400 döndürür.
+   */
+  @Get('lobby')
+  @ApiOperation({
+    summary: 'Lobi — devam eden multiplayer oyunlar (story + partner + son sahne)',
+    description:
+      'Tek çağrıda phase=invite|playing oturumları döner. Sıralama: isMyTurn=true önce, ' +
+      'sonra updatedAt azalan. İstemcinin ayrıca story/partner/progress çağırmasına gerek yok.',
+  })
+  @ApiOkResponse({
+    description: 'Lobi satırları',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          sessionId: { type: 'string', example: '68f1a2b3c4d5e6f708192a3b' },
+          phase: { type: 'string', enum: ['invite', 'playing'] },
+          currentChapter: { type: 'number', example: 2 },
+          updatedAt: { type: 'string', format: 'date-time', nullable: true },
+          isMyTurn: { type: 'boolean' },
+          story: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', nullable: true },
+              title: { type: 'string', example: 'Gece Yarısı Treni' },
+              coverImage: { type: 'string', nullable: true, example: 'https://.../cover.jpg' },
+            },
+          },
+          partner: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              displayName: { type: 'string', nullable: true },
+              avatarUrl: { type: 'string', nullable: true },
+              isOnline: { type: 'boolean' },
+            },
+          },
+          lastSceneSummary: { type: 'string', nullable: true },
+        },
+      },
+    },
+  })
+  async lobby(@CurrentUser() user: JwtPayload) {
+    return this.multiplayerService.getLobby(user.sub);
   }
 
   @Get(':id')

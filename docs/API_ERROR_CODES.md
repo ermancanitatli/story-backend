@@ -32,6 +32,10 @@ Tüm hata yanıtları şu JSON zarfını kullanır:
 | `PANEL_FORBIDDEN` | 403 | Panel kaynağına erişim yok | — | SessionAuthGuard, SuperadminGuard |
 | `PANEL_SESSION_EXPIRED` | 401 | Panel oturumu bitti | — | SessionAuthGuard |
 | `RATE_LIMITED` | 429 | İstek hızı sınırı aşıldı | `retryAfter: seconds` | Login, broadcast notification |
+| `ENDPOINT_REMOVED` | 410 | Endpoint kalıcı olarak kaldırıldı — retry etme, özelliği UI'dan kaldır | — | `/api/story-sessions/*` (singleplayer, ürün multiplayer-only'ye geçti) |
+
+> ⚠️ 410 iki farklı kod taşıyabilir: `USER_DELETED` (hesap silinmiş) ve
+> `ENDPOINT_REMOVED` (özellik kaldırılmış). İstemci status'a değil `code` alanına bakmalı.
 
 ## iOS Tarafı Sözleşmesi
 

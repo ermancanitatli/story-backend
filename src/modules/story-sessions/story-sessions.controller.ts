@@ -1,74 +1,44 @@
-import { Controller, Post, Get, Delete, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
-import { StorySessionsService } from './story-sessions.service';
-import { CreateSessionDto } from './dto/create-session.dto';
-import { SubmitChoiceDto } from './dto/submit-choice.dto';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { JwtPayload } from '../auth/strategies/jwt.strategy';
-import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
+import { All, Controller, GoneException } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Public } from '../../common/decorators/public.decorator';
+import { ErrorCodes } from '../../common/filters/error-codes';
 
-@ApiTags('Story Sessions')
-@ApiBearerAuth()
+/**
+ * Singleplayer (story-sessions) TOMBSTONE controller.
+ *
+ * Ürün multiplayer-only'ye geçtiği için tüm singleplayer route'ları kaldırıldı:
+ *   POST   /api/story-sessions
+ *   GET    /api/story-sessions
+ *   GET    /api/story-sessions/:id
+ *   GET    /api/story-sessions/:id/progress
+ *   POST   /api/story-sessions/:id/choice
+ *   DELETE /api/story-sessions/batch
+ *   DELETE /api/story-sessions/:id
+ *
+ * Hepsi 410 Gone döner — 404 değil. 404 "yanlış yol / geçici" sinyali verir ve
+ * eski istemciler retry eder; 410 "kalıcı olarak kaldırıldı" demektir.
+ *
+ * @Public(): JWT guard bypass edilir. Aksi halde token'ı expire olmuş eski bir
+ * istemci 401 alır ve gerçek sebebi (özellik kaldırıldı) asla göremez.
+ *
+ * NOT: `story_sessions` / `story_progress` collection'ları ve şema dosyaları
+ * DURUYOR — veri dışa aktarımı ve panel istatistikleri hâlâ okuyor
+ * (stories.module + panel.module kendi forFeature kaydını yapıyor).
+ */
+@ApiTags('Story Sessions (removed)')
 @Controller('story-sessions')
 export class StorySessionsController {
-  constructor(private sessionsService: StorySessionsService) {}
-
-  @Post()
-  @ApiOperation({ summary: 'Create new story session and get first scene' })
-  @ApiResponse({ status: 201, description: 'Session created with first progress' })
-  async createSession(@CurrentUser() user: JwtPayload, @Body() dto: CreateSessionDto) {
-    return this.sessionsService.createSession(user.sub, dto);
-  }
-
-  @Get()
-  @ApiOperation({ summary: 'List user sessions' })
-  async getUserSessions(@CurrentUser() user: JwtPayload) {
-    return this.sessionsService.getUserSessions(user.sub);
-  }
-
-  @Get(':id')
-  @ApiOperation({ summary: 'Get session details' })
-  async getSession(
-    @CurrentUser() user: JwtPayload,
-    @Param('id', ParseObjectIdPipe) id: string,
-  ) {
-    return this.sessionsService.getSession(user.sub, id);
-  }
-
-  @Get(':id/progress')
-  @ApiOperation({ summary: 'Get latest progress for session' })
-  async getLatestProgress(@Param('id', ParseObjectIdPipe) id: string) {
-    return this.sessionsService.getLatestProgress(id);
-  }
-
-  @Post(':id/choice')
-  @ApiOperation({ summary: 'Submit user choice and get next scene' })
-  @ApiResponse({ status: 201, description: 'Choice submitted, new progress returned' })
-  async submitChoice(
-    @CurrentUser() user: JwtPayload,
-    @Param('id', ParseObjectIdPipe) id: string,
-    @Body() dto: SubmitChoiceDto,
-  ) {
-    return this.sessionsService.submitChoice(user.sub, id, dto);
-  }
-
-  @Delete('batch')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Batch delete sessions (ids in body, or all if empty)' })
-  async batchDelete(
-    @CurrentUser() user: JwtPayload,
-    @Body() body: { ids?: string[]; all?: boolean },
-  ) {
-    return this.sessionsService.batchDelete(user.sub, body.ids, body.all === true);
-  }
-
-  @Delete(':id')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Delete a session and its progresses' })
-  async deleteSession(
-    @CurrentUser() user: JwtPayload,
-    @Param('id', ParseObjectIdPipe) id: string,
-  ) {
-    return this.sessionsService.deleteSession(user.sub, id);
+  @Public()
+  @All(['/', '*'])
+  @ApiOperation({
+    summary: 'REMOVED — singleplayer kaldırıldı, tüm alt route\'lar 410 döner',
+  })
+  @ApiResponse({ status: 410, description: 'ENDPOINT_REMOVED' })
+  gone(): never {
+    throw new GoneException({
+      code: ErrorCodes.ENDPOINT_REMOVED,
+      message:
+        'Singleplayer story sessions have been permanently removed. This app is multiplayer-only.',
+    });
   }
 }

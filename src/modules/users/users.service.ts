@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { User } from './schemas/user.schema';
 import { UpdateUserDto } from './dto/update-user.dto';
 
@@ -32,6 +32,18 @@ export class UsersService {
    */
   async findById(id: string): Promise<User | null> {
     return this.userModel.findById(id).exec();
+  }
+
+  /**
+   * Toplu kullanıcı çekme ($in) — N+1 sorgu önlemek için.
+   * Geçersiz ObjectId'ler sessizce elenir, bulunamayanlar sonuçta yer almaz.
+   */
+  async findByIds(ids: string[]): Promise<User[]> {
+    const objectIds = Array.from(new Set(ids))
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    if (objectIds.length === 0) return [];
+    return this.userModel.find({ _id: { $in: objectIds } }).exec();
   }
 
   /**

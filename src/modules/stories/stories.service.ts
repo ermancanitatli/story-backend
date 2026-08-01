@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Story } from './schemas/story.schema';
 import { StorySession } from '../story-sessions/schemas/story-session.schema';
 import { PaginationDto, PaginatedResult } from '../../common/dto/pagination.dto';
@@ -50,6 +50,18 @@ export class StoriesService {
     const story = await this.storyModel.findById(id).exec();
     if (!story) throw new NotFoundException('Story not found');
     return story;
+  }
+
+  /**
+   * Toplu hikaye çekme ($in) — lobby gibi listeleme uçlarında N+1 önler.
+   * Geçersiz ObjectId'ler elenir, bulunamayanlar sonuçta yer almaz.
+   */
+  async findByIds(ids: string[]): Promise<Story[]> {
+    const objectIds = Array.from(new Set(ids))
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    if (objectIds.length === 0) return [];
+    return this.storyModel.find({ _id: { $in: objectIds } }).exec();
   }
 
   /**
