@@ -44,6 +44,15 @@ export class MultiplayerSession extends Document {
   @Prop() lastProgressId?: string;
   @Prop() completedAt?: Date;
 
+  // === Sıra bildirimi / sessizlik hatırlatması ===
+  // Aktif oyuncuya sıra geçtiği an. 24 saatlik sessizlik hatırlatmasının ölçüm noktası.
+  @Prop() turnStartedAt?: Date;
+  // Hatırlatma gönderildiği an. null/eksik = henüz gönderilmedi.
+  // Her sıra değişiminde null'a çekilir → oturum başına değil, sıra başına tek hatırlatma.
+  @Prop({ default: null }) turnReminderSentAt?: Date | null;
+  // "Sıra sende" push'unun gönderildiği turnOrder — cross-instance idempotency claim'i.
+  @Prop({ default: 0 }) turnNotifiedForTurn?: number;
+
   // Chapter bridge özetleri (single-player story-session.schema ile aynı pattern).
   // Chapter transition zaten multiplayer'da aktif değil ama ileride eklendiğinde hazır.
   @Prop({ type: Object, default: {} })
@@ -98,3 +107,5 @@ export const MultiplayerSessionSchema = SchemaFactory.createForClass(Multiplayer
 
 MultiplayerSessionSchema.index({ hostId: 1, phase: 1 });
 MultiplayerSessionSchema.index({ guestId: 1, phase: 1 });
+// Sessizlik hatırlatması cron'u: phase='playing' + hatırlatma gönderilmemiş + turnStartedAt penceresi
+MultiplayerSessionSchema.index({ phase: 1, turnReminderSentAt: 1, turnStartedAt: 1 });

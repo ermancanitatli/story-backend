@@ -7,9 +7,15 @@ import { StoriesService } from '../stories/stories.service';
 import { AiService } from '../ai/ai.service';
 import { UsersService } from '../users/users.service';
 import { PresenceService } from '../presence/presence.service';
+import { NotificationService } from '../notifications/notification.service';
 import { getTranslation } from '../stories/helpers/translation.helper';
 import { Story } from '../stories/schemas/story.schema';
 import { DEFAULT_LOCALE } from '../../shared/constants/locales';
+import {
+  fillTemplate,
+  normalizeLocale,
+  turnNotificationTexts,
+} from './helpers/turn-notification.texts';
 
 // === Chapter pacing constants (singleplayer ile aynı değerler) ===
 const MIN_STEPS_PER_CHAPTER = 5;
@@ -19,6 +25,12 @@ const MAX_STEPS_PER_CHAPTER = 10;
 // === Lobby constants ===
 const LOBBY_MAX_SESSIONS = 50;
 const LOBBY_SCENE_SNIPPET_LENGTH = 80;
+
+// === Sessizlik hatırlatması ===
+// Sırası gelen oyuncu 24 saat oynamazsa tek hatırlatma; 72 saati geçen oturuma dokunma.
+const TURN_REMINDER_AFTER_MS = 24 * 60 * 60 * 1000;
+const TURN_REMINDER_GIVE_UP_MS = 72 * 60 * 60 * 1000;
+const TURN_REMINDER_BATCH_LIMIT = 200;
 
 /**
  * Lobi satırı — iOS ana ekranın "devam eden oyunlar" kartı.
@@ -116,6 +128,7 @@ export class MultiplayerService {
     private aiService: AiService,
     private usersService: UsersService,
     private presenceService: PresenceService,
+    private notificationService: NotificationService,
   ) {}
 
   async createSession(hostId: string, guestId: string, storyId: string): Promise<MultiplayerSession> {
@@ -319,6 +332,9 @@ export class MultiplayerService {
       currentStep: 1,
       currentChapter: 1,
       chapterStepCount: 1,
+      // İlk sıra host'ta — sessizlik sayacı buradan başlar.
+      turnStartedAt: new Date(),
+      turnReminderSentAt: null,
     });
 
     this.logger.log(
@@ -1061,6 +1077,9 @@ export class MultiplayerService {
       recentBeats: updatedRecentBeats,
       recentFlavors: updatedRecentFlavors,
       recentDisruptors: updatedRecentDisruptors,
+      // Sıra karşıya geçti: sessizlik sayacını sıfırla, hatırlatma hakkını geri ver.
+      turnStartedAt: new Date(),
+      turnReminderSentAt: null,
     };
     // Chapter transition'da rolling summary'yi sıfırla + recency buffer'ları yenile
     if (isChapterTransition) {
@@ -1074,6 +1093,16 @@ export class MultiplayerService {
       sessionUpdate.completedAt = new Date();
     }
     await this.sessionModel.findByIdAndUpdate(sessionId, sessionUpdate);
+
+    // === "Sıra sende" push — fire-and-forget, oyun akışını bloklamaz ===
+    // Oyun bittiyse sıra kimseye geçmiyor, bildirim de yok.
+    if (!grokResponse.isEnding) {
+      void this.notifyTurnOwner({
+        session,
+        recipientId: session.nextPlayerId?.toString(),
+        turnOrder: newTurn,
+      });
+    }
 
     // === ASYNC: Rolling summary update (fire-and-forget) ===
     const ROLLING_SUMMARY_INTERVAL = 5;
@@ -1196,6 +1225,193 @@ export class MultiplayerService {
 
   async getLatestProgress(sessionId: string): Promise<MultiplayerProgress | null> {
     return this.progressModel.findOne({ sessionId: new Types.ObjectId(sessionId) }).sort({ turnOrder: -1 });
+  }
+
+  // ==========================================================================
+  // Sıra bildirimleri (push)
+  // ==========================================================================
+
+  /**
+   * Sıra bildirimi bağlamı: alıcının dili, o dildeki hikâye başlığı, partner adı.
+   *
+   * `null` dönerse çağıran hiçbir şey göndermez:
+   *   - kullanıcı bulunamadı
+   *   - fake user (gerçek cihazı yok, OneSignal player id'si yok — boşa çağrı)
+   *   - push aboneliği yok (oneSignalPlayerId boş)
+   */
+  private async resolveTurnPushContext(
+    session: MultiplayerSession,
+    recipientId: string,
+  ): Promise<{
+    locale: string;
+    storyTitle: string;
+    partnerName: string;
+    playerId: string;
+  } | null> {
+    const recipient = await this.usersService.findById(recipientId);
+    if (!recipient) return null;
+    if (recipient.isFake) return null;
+    if (!recipient.oneSignalPlayerId) return null;
+
+    const isHost = session.hostId?.toString() === recipientId;
+
+    // Dil önceliği: session'a yazılan oyuncu dili (sahneler o dilde üretildi)
+    //   → kullanıcının uygulama dili → 'en'
+    const locale = normalizeLocale(
+      (isHost ? session.hostLanguageCode : session.guestLanguageCode) ||
+        recipient.appSettings?.language,
+    );
+
+    const partnerName = (isHost ? session.guestName : session.hostName) || 'Partner';
+
+    let storyTitle = ((session.storyClone as any)?.title as string) || '';
+    if (session.storyId) {
+      try {
+        const story = await this.storiesService.findById(session.storyId.toString());
+        storyTitle = getTranslation(story, locale, 'title') || storyTitle;
+      } catch {
+        // Hikâye silinmiş olabilir — storyClone başlığıyla devam et.
+      }
+    }
+
+    return {
+      locale,
+      storyTitle: storyTitle || 'Story',
+      partnerName,
+      playerId: recipient.oneSignalPlayerId,
+    };
+  }
+
+  /**
+   * "Sıra sende" push'u — sıra karşıya geçtikten sonra fire-and-forget çağrılır.
+   *
+   * Hata yutulur ve loglanır: bildirim hiçbir koşulda submitChoice yanıtını
+   * geciktirmemeli veya düşürmemeli.
+   */
+  private async notifyTurnOwner(params: {
+    session: MultiplayerSession;
+    recipientId?: string;
+    turnOrder: number;
+  }): Promise<void> {
+    const { session, recipientId, turnOrder } = params;
+    if (!recipientId) return;
+    const sessionId = (session._id as Types.ObjectId).toString();
+
+    try {
+      // Idempotency: aynı turn için tek push. submitChoice'ın in-memory cache'i
+      // process-local; bu atomik claim çok instance'lı deploy'da da korur.
+      const claimed = await this.sessionModel.findOneAndUpdate(
+        {
+          _id: session._id,
+          $or: [
+            { turnNotifiedForTurn: { $lt: turnOrder } },
+            { turnNotifiedForTurn: { $exists: false } },
+          ],
+        },
+        { $set: { turnNotifiedForTurn: turnOrder } },
+      );
+      if (!claimed) {
+        this.logger.debug(`[turn-push] already sent session=${sessionId} turn=${turnOrder}`);
+        return;
+      }
+
+      const ctx = await this.resolveTurnPushContext(session, recipientId);
+      if (!ctx) return;
+
+      const texts = turnNotificationTexts(ctx.locale);
+      const values = { partner: ctx.partnerName, story: ctx.storyTitle };
+
+      await this.notificationService.sendToUser({
+        playerIds: [ctx.playerId],
+        title: fillTemplate(texts.yourTurnTitle, values),
+        message: fillTemplate(texts.yourTurnBody, values),
+        data: {
+          type: 'mp_your_turn',
+          sessionId,
+          storyTitle: ctx.storyTitle,
+          partnerName: ctx.partnerName,
+        },
+      });
+
+      this.logger.log(
+        `[turn-push] sent session=${sessionId} turn=${turnOrder} to=${recipientId} lang=${ctx.locale}`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `[turn-push] failed session=${sessionId} turn=${turnOrder}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Sessizlik hatırlatması — sırası gelen oyuncu TURN_REMINDER_AFTER_MS boyunca
+   * oynamadıysa tek seferlik push. MultiplayerReminderScheduler saatte bir çağırır.
+   *
+   * - Oturum başına değil, **sıra başına** bir kez: her sıra değişiminde
+   *   `turnReminderSentAt` null'a çekilir.
+   * - TURN_REMINDER_GIVE_UP_MS'i geçen oturumlar taranmaz — sonsuz dürtme spam olur.
+   */
+  async dispatchTurnReminders(): Promise<number> {
+    const now = Date.now();
+    const staleBefore = new Date(now - TURN_REMINDER_AFTER_MS);
+    const giveUpBefore = new Date(now - TURN_REMINDER_GIVE_UP_MS);
+
+    const candidates = await this.sessionModel
+      .find({
+        phase: 'playing',
+        turnReminderSentAt: null,
+        turnStartedAt: { $lte: staleBefore, $gte: giveUpBefore },
+      })
+      .limit(TURN_REMINDER_BATCH_LIMIT)
+      .exec();
+
+    let sent = 0;
+
+    for (const session of candidates) {
+      const sessionId = (session._id as Types.ObjectId).toString();
+      const recipientId = session.activePlayerId?.toString();
+      if (!recipientId) continue;
+
+      // Atomik claim — iki instance aynı anda taramış olsa bile tek push gider.
+      const claimed = await this.sessionModel.findOneAndUpdate(
+        { _id: session._id, turnReminderSentAt: null },
+        { $set: { turnReminderSentAt: new Date() } },
+      );
+      if (!claimed) continue;
+
+      try {
+        const ctx = await this.resolveTurnPushContext(session, recipientId);
+        if (!ctx) continue;
+
+        const texts = turnNotificationTexts(ctx.locale);
+        const values = { partner: ctx.partnerName, story: ctx.storyTitle };
+
+        await this.notificationService.sendToUser({
+          playerIds: [ctx.playerId],
+          title: fillTemplate(texts.reminderTitle, values),
+          message: fillTemplate(texts.reminderBody, values),
+          data: {
+            type: 'mp_your_turn',
+            sessionId,
+            storyTitle: ctx.storyTitle,
+            partnerName: ctx.partnerName,
+          },
+        });
+        sent++;
+        this.logger.log(`[turn-reminder] sent session=${sessionId} to=${recipientId}`);
+      } catch (err) {
+        this.logger.warn(
+          `[turn-reminder] failed session=${sessionId}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    if (candidates.length > 0) {
+      this.logger.log(
+        `[turn-reminder] scanned=${candidates.length} sent=${sent}`,
+      );
+    }
+    return sent;
   }
 
   /**

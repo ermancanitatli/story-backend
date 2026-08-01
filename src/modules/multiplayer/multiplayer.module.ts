@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MultiplayerController } from './multiplayer.controller';
 import { MultiplayerService } from './multiplayer.service';
+import { MultiplayerReminderScheduler } from './multiplayer-reminder.scheduler';
 import { MultiplayerSession, MultiplayerSessionSchema } from './schemas/multiplayer-session.schema';
 import { MultiplayerProgress, MultiplayerProgressSchema } from './schemas/multiplayer-progress.schema';
 import { StoriesModule } from '../stories/stories.module';
@@ -10,6 +11,7 @@ import { UsersModule } from '../users/users.module';
 import { SocketModule } from '../socket/socket.module';
 import { FakeUsersModule } from '../fake-users/fake-users.module';
 import { PresenceModule } from '../presence/presence.module';
+import { NotificationModule } from '../notifications/notification.module';
 
 @Module({
   imports: [
@@ -21,11 +23,12 @@ import { PresenceModule } from '../presence/presence.module';
     AiModule,
     UsersModule,
     PresenceModule,
+    NotificationModule,
     forwardRef(() => SocketModule),
     forwardRef(() => FakeUsersModule),
   ],
   controllers: [MultiplayerController],
-  providers: [MultiplayerService],
+  providers: [MultiplayerService, MultiplayerReminderScheduler],
   exports: [MultiplayerService],
 })
 export class MultiplayerModule {}
