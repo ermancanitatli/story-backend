@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { MultiplayerSession } from './schemas/multiplayer-session.schema';
@@ -10,6 +16,8 @@ import { PresenceService } from '../presence/presence.service';
 import { NotificationService } from '../notifications/notification.service';
 import { getTranslation } from '../stories/helpers/translation.helper';
 import { Story } from '../stories/schemas/story.schema';
+import { UnlocksService } from '../unlocks/unlocks.service';
+import { ErrorCodes } from '../../common/filters/error-codes';
 import { DEFAULT_LOCALE } from '../../shared/constants/locales';
 import {
   fillTemplate,
@@ -129,9 +137,15 @@ export class MultiplayerService {
     private usersService: UsersService,
     private presenceService: PresenceService,
     private notificationService: NotificationService,
+    private unlocksService: UnlocksService,
   ) {}
 
   async createSession(hostId: string, guestId: string, storyId: string): Promise<MultiplayerSession> {
+    // 🔴 Entitlement kapısı — kilitli hikayeyle oturum açılamaz.
+    // Sadece HOST doğrulanır: daveti veren ödemiştir, misafirden erişim aranmaz.
+    // Kontrol servis katmanında; controller'dan başka bir çağıran eklenirse de korunur.
+    await this.unlocksService.assertAccess(hostId, storyId);
+
     const story = await this.storiesService.findById(storyId);
     return this.sessionModel.create({
       hostId: new Types.ObjectId(hostId),
@@ -168,13 +182,36 @@ export class MultiplayerService {
     const hostGender = hostUser?.appSettings?.extra?.multiplayerGender || 'male';
     const guestGender = guestUser?.appSettings?.extra?.multiplayerGender || 'female';
 
-    // Rastgele hikaye seç
+    // Rastgele hikaye seç — SADECE iki oyuncunun da erişebildiği havuzdan.
+    //
+    // Ürün kararı: havuz = ücretsiz hikayeler + İKİSİNİN de açtıkları.
+    // Böylece "eşleş, oyna, sonra ödeyememe" ölü ucu hiç oluşmaz. Ayrıca eski
+    // davranıştaki sızıntı da kapanır: matchmaking ücretli hikayeleri kimseye
+    // ücret yansıtmadan dağıtıyordu.
     const result = await this.storiesService.findAll({ page: 1, limit: 50 });
     const stories = result.data;
     if (!stories || stories.length === 0) {
       throw new BadRequestException('No stories available for matchmaking');
     }
-    const picked = stories[Math.floor(Math.random() * stories.length)];
+
+    const pool = await this.unlocksService.filterStoriesAccessibleToAll(stories, [
+      hostId,
+      guestId,
+    ]);
+    if (pool.length === 0) {
+      // Ücretli hikayeyi bedava dağıtmaktansa eşleşmeyi reddet.
+      // Bu log görülüyorsa katalogda ücretsiz hikaye kalmamış demektir — içerik sorunu.
+      this.logger.error(
+        `Matchmaking pool empty for ${hostId} <-> ${guestId}: ` +
+          `${stories.length} story fetched, 0 accessible to both. Publish at least one free story.`,
+      );
+      throw new ConflictException({
+        code: ErrorCodes.NO_ACCESSIBLE_STORIES,
+        message: 'No story is available to both players right now.',
+      });
+    }
+
+    const picked = pool[Math.floor(Math.random() * pool.length)];
     const storyId = picked._id as Types.ObjectId;
     const storyClone = {
       title: picked.title,

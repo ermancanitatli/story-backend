@@ -7,6 +7,7 @@ import {
   StorySession,
   StorySessionSchema,
 } from '../story-sessions/schemas/story-session.schema';
+import { UnlocksModule } from '../unlocks/unlocks.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import {
       { name: Story.name, schema: StorySchema },
       { name: StorySession.name, schema: StorySessionSchema },
     ]),
+    UnlocksModule,
   ],
   controllers: [StoriesController],
   providers: [StoriesService],

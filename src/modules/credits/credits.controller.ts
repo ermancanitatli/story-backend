@@ -19,9 +19,19 @@ export class CreditsController {
   }
 
   @Post('spend')
-  @ApiOperation({ summary: 'Spend credits' })
-  async spend(@CurrentUser() user: JwtPayload, @Body() body: { amount: number; reason: string }) {
-    return this.creditsService.spendCredits(user.sub, body.amount, body.reason);
+  @ApiOperation({
+    summary: 'Spend credits (fiyat sunucuda belirlenir)',
+    description:
+      '⚠️ `amount` alanı ARTIK YOK SAYILIYOR — fiyat `reason` üzerinden sunucuda belirlenir. ' +
+      'Geçerli sebepler: `custom_input`, `custom_input_multiplayer`. ' +
+      '`unlock_story_*` sebepleri 400 `INVALID_SPEND_REASON` döner; hikaye açma için ' +
+      'POST /api/stories/:id/unlock kullanılmalıdır.',
+  })
+  async spend(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { reason: string; amount?: number },
+  ) {
+    return this.creditsService.spendCredits(user.sub, body?.reason, body?.amount);
   }
 
   @Post('grant')

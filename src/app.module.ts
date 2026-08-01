@@ -23,6 +23,7 @@ import { MultiplayerModule } from './modules/multiplayer/multiplayer.module';
 import { FriendshipsModule } from './modules/friendships/friendships.module';
 import { UserHandlesModule } from './modules/user-handles/user-handles.module';
 import { CreditsModule } from './modules/credits/credits.module';
+import { UnlocksModule } from './modules/unlocks/unlocks.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { ReferralsModule } from './modules/referrals/referrals.module';
 import { StorageModule } from './modules/storage/storage.module';
@@ -94,6 +95,7 @@ import { PanelModule } from './modules/panel/panel.module';
     FriendshipsModule,
     UserHandlesModule,
     CreditsModule,
+    UnlocksModule,
     BillingModule,
     ReferralsModule,
     StorageModule,

@@ -33,9 +33,17 @@ Tüm hata yanıtları şu JSON zarfını kullanır:
 | `PANEL_SESSION_EXPIRED` | 401 | Panel oturumu bitti | — | SessionAuthGuard |
 | `RATE_LIMITED` | 429 | İstek hızı sınırı aşıldı | `retryAfter: seconds` | Login, broadcast notification |
 | `ENDPOINT_REMOVED` | 410 | Endpoint kalıcı olarak kaldırıldı — retry etme, özelliği UI'dan kaldır | — | `/api/story-sessions/*` (singleplayer, ürün multiplayer-only'ye geçti) |
+| `INSUFFICIENT_CREDITS` | 402 | Bakiye yetersiz — paywall aç | `required: number`, `balance: number` | `POST /api/stories/:id/unlock`, `POST /api/credits/spend` |
+| `STORY_LOCKED` | 403 | Hikaye ücretli ve kullanıcı açmamış — önce unlock | `storyId: string`, `creditCost: number` | `POST /api/multiplayer/invite` |
+| `NO_ACCESSIBLE_STORIES` | 409 | Matchmaking'de iki oyuncunun da erişebildiği hikaye yok | — | Matchmaking session oluşturma |
+| `INVALID_SPEND_REASON` | 400 | `reason` sunucu allowlist'inde değil | `reason: string`, `allowed?: string[]` | `POST /api/credits/spend` |
 
 > ⚠️ 410 iki farklı kod taşıyabilir: `USER_DELETED` (hesap silinmiş) ve
 > `ENDPOINT_REMOVED` (özellik kaldırılmış). İstemci status'a değil `code` alanına bakmalı.
+
+> ⚠️ `code`'a özgü ek alanlar (`required`, `balance`, `storyId`, `creditCost`, `reason`)
+> sarmalanmış yanıtta `error.details` altına düşer:
+> `{ "error": { "code": "INSUFFICIENT_CREDITS", "message": "...", "details": { "required": 100, "balance": 12 } } }`
 
 ## iOS Tarafı Sözleşmesi
 

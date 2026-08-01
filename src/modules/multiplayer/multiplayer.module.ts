@@ -6,6 +6,7 @@ import { MultiplayerReminderScheduler } from './multiplayer-reminder.scheduler';
 import { MultiplayerSession, MultiplayerSessionSchema } from './schemas/multiplayer-session.schema';
 import { MultiplayerProgress, MultiplayerProgressSchema } from './schemas/multiplayer-progress.schema';
 import { StoriesModule } from '../stories/stories.module';
+import { UnlocksModule } from '../unlocks/unlocks.module';
 import { AiModule } from '../ai/ai.module';
 import { UsersModule } from '../users/users.module';
 import { SocketModule } from '../socket/socket.module';
@@ -20,6 +21,7 @@ import { NotificationModule } from '../notifications/notification.module';
       { name: MultiplayerProgress.name, schema: MultiplayerProgressSchema },
     ]),
     StoriesModule,
+    UnlocksModule,
     AiModule,
     UsersModule,
     PresenceModule,

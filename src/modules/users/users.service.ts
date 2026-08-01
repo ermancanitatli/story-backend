@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 import { User } from './schemas/user.schema';
 import { UpdateUserDto } from './dto/update-user.dto';
 
@@ -155,17 +155,39 @@ export class UsersService {
 
   /**
    * Atomically modify credits (positive = grant, negative = spend).
+   *
+   * Guard + `$inc` TEK operasyondadır — `user.credits = x; user.save()` ASLA kullanılmaz.
+   * Harcamada `credits: { $gte: |amount| }` filtresi eşleşmezse doküman güncellenmez.
+   *
+   * @returns yeni bakiye, ya da guard tutmadıysa (kullanıcı yok / bakiye yetersiz) `null`.
+   *          Çağıran iki durumu ayırmak istiyorsa önce `findById` ile kontrol etmeli.
    */
-  async modifyCredits(id: string, amount: number): Promise<number> {
+  async tryModifyCredits(
+    id: string,
+    amount: number,
+    options?: { session?: ClientSession },
+  ): Promise<number | null> {
     const user = await this.userModel.findOneAndUpdate(
       { _id: id, credits: { $gte: amount < 0 ? Math.abs(amount) : 0 } },
       { $inc: { credits: amount } },
-      { new: true },
+      { new: true, ...(options?.session ? { session: options.session } : {}) },
     );
-    if (!user) {
+    return user ? user.credits : null;
+  }
+
+  /**
+   * `tryModifyCredits` + hata fırlatan sarmalayıcı (geriye dönük uyumlu davranış).
+   */
+  async modifyCredits(
+    id: string,
+    amount: number,
+    options?: { session?: ClientSession },
+  ): Promise<number> {
+    const credits = await this.tryModifyCredits(id, amount, options);
+    if (credits === null) {
       throw new NotFoundException('User not found or insufficient credits');
     }
-    return user.credits;
+    return credits;
   }
 
   /**
